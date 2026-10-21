@@ -216,3 +216,18 @@ export async function deleteProjectArchiveObjects(
   } while (cursor);
   return deleted;
 }
+
+export async function setReportSources(input: {
+  projectId: string;
+  reportId: string;
+  entryIds: string[];
+}) {
+  return repo.setReportSources(input);
+}
+
+/** The archived results a report was built from, newest first. */
+export async function listReportSources(projectId: string, reportId: string) {
+  return (await repo.listReportSources(projectId, reportId)).map(({ entry }) =>
+    toSummary(entry),
+  );
+}

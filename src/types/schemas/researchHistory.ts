@@ -32,6 +32,8 @@ export const RESEARCH_ARCHIVE_KINDS = [
   "prompt_research",
   "prompt_explorer",
   "ga4_landing_pages",
+  "url_inspection",
+  "website_research",
 ] as const;
 export type ResearchArchiveKind = (typeof RESEARCH_ARCHIVE_KINDS)[number];
 

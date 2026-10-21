@@ -65,6 +65,7 @@ async function upsertBacklinkSnapshot(row: BacklinkSnapshotRow) {
         newReferringDomains: row.newReferringDomains,
         lostReferringDomains: row.lostReferringDomains,
         spamScore: row.spamScore,
+        domainRating: row.domainRating,
         capturedAt: row.capturedAt,
       },
     });

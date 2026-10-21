@@ -22,6 +22,14 @@ vi.mock("ai", () => ({
   tool: (value: unknown) => value,
 }));
 vi.mock("@/server/lib/scrape", () => ({ readSite }));
+vi.mock("@/server/lib/r2-cache", () => ({
+  RESEARCH_FRESHNESS_SECONDS: { aiSearch: 604800 },
+}));
+// No stored drafts: every test exercises a fresh research run.
+vi.mock("@/server/features/research-history/services/cachedLookup", () => ({
+  readCachedLookup: async () => null,
+  storeLookupResult: async () => undefined,
+}));
 vi.mock("@/server/lib/dataforseo/serp", () => ({ fetchLiveSerp: search }));
 vi.mock("@/server/lib/runtime-env", () => ({
   getRequiredEnvValue: vi.fn(),

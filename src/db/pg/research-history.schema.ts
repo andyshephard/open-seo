@@ -11,6 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { projects } from "./app.schema";
+import { reports } from "./reports.schema";
 
 // Postgres mirror of the research history tables. Column notes: see
 // ../research-history.schema.ts. Large provider counts are bigint here; SQLite
@@ -65,6 +66,8 @@ export const domainBacklinkSnapshots = pgTable(
     newReferringDomains: bigint("new_referring_domains", { mode: "number" }),
     lostReferringDomains: bigint("lost_referring_domains", { mode: "number" }),
     spamScore: integer("spam_score"),
+    // Ahrefs' free Domain Rating at capture time (null when unrated).
+    domainRating: integer("domain_rating"),
     capturedAt: text("captured_at").notNull().default(isoNow),
   },
   (table) => [
@@ -208,5 +211,20 @@ export const gscDailyRows = pgTable(
       table.dimension,
       table.date,
     ),
+  ],
+);
+
+export const reportSources = pgTable(
+  "report_sources",
+  {
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    archiveEntryId: text("archive_entry_id")
+      .notNull()
+      .references(() => researchArchiveEntries.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("report_sources_pair").on(table.reportId, table.archiveEntryId),
   ],
 );

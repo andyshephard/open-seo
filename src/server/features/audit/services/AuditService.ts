@@ -325,6 +325,26 @@ async function remove(auditId: string, projectId: string) {
   } catch (error) {
     console.warn(`Failed to destroy audit scratchpad ${auditId}:`, error);
   }
+  // Best-effort: the audit's Lighthouse reports live in R2 under its prefix
+  // and would otherwise outlive the deleted audit.
+  try {
+    await deleteR2Prefix(`site-audit/${projectId}/${auditId}/`);
+  } catch (error) {
+    console.warn(
+      `Failed to delete audit ${auditId} Lighthouse objects:`,
+      error,
+    );
+  }
+}
+
+async function deleteR2Prefix(prefix: string) {
+  let cursor: string | undefined;
+  do {
+    const page = await env.R2.list({ prefix, cursor });
+    const keys = page.objects.map((object) => object.key);
+    if (keys.length > 0) await env.R2.delete(keys);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
 }
 
 export const AuditService = {

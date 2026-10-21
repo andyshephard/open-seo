@@ -120,6 +120,7 @@ export async function getResearchHistory(
         newReferringDomains: row.newReferringDomains,
         lostReferringDomains: row.lostReferringDomains,
         spamScore: row.spamScore,
+        domainRating: row.domainRating,
       })),
     })),
     keywords: keywords.map((keyword) => ({

@@ -1,5 +1,6 @@
 import { sort } from "remeda";
 import { z } from "zod";
+import { archiveLookup } from "@/server/features/research-history/services/researchArchive";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import { DashboardCacheService } from "./DashboardCacheService";
 import {
@@ -71,6 +72,14 @@ async function getBacklinks(
                   `${from} 00:00:00 +00:00`,
                 ],
               ],
+      });
+      await archiveLookup(billingCustomer, {
+        kind: "backlinks_rows",
+        target: target.displayTarget,
+        viewKey: `dashboard:links:${input.kind}:${target.apiTarget}`,
+        params: { dashboard: input.kind },
+        fetchedAt: new Date().toISOString(),
+        payload: response.items,
       });
       return response.items;
     },
@@ -304,6 +313,14 @@ async function getLinkActivity(
         hideSpam: false,
         orderBy: ["first_seen,desc"],
         filters: [["first_seen", ">=", `${from} 00:00:00 +00:00`]],
+      });
+      await archiveLookup(billingCustomer, {
+        kind: "backlinks_referring_domains",
+        target,
+        viewKey: `dashboard:new-domains:${target}`,
+        params: { dashboard: "new" },
+        fetchedAt: new Date().toISOString(),
+        payload: response.items,
       });
       return response.items;
     },

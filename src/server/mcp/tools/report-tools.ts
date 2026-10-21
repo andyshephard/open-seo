@@ -1,5 +1,9 @@
 import { omit } from "remeda";
 import { z } from "zod";
+import {
+  listReportSources,
+  setReportSources,
+} from "@/server/features/research-history/services/researchArchive";
 import { ReportService } from "@/server/features/reports/services/ReportService";
 import { ReportTemplateService } from "@/server/features/reports/services/ReportTemplateService";
 import { captureServerEvent } from "@/server/lib/posthog";
@@ -92,6 +96,13 @@ const saveInputSchema = {
     .describe(
       'The slug of the skill that produced this report — the name of the SKILL.md you are running, e.g. "seo-audit". The report list keys on it, so a save without it shows "—".',
     ),
+  sourceIds: z
+    .array(z.string().min(1).max(64))
+    .max(50)
+    .optional()
+    .describe(
+      "Ids (from list_research_archive) of the archived results this report's numbers come from. get_report returns them, so updating the report later can reread that exact data free with get_research_archive_entry instead of buying it again. Replaces the report's previous sources.",
+    ),
   templateId: z
     .string()
     .min(1)
@@ -151,6 +162,14 @@ export const saveReportTool = {
         createdByUserId: context.auth.userId,
       });
 
+      const linkedSources = args.sourceIds
+        ? await setReportSources({
+            projectId: args.projectId,
+            reportId: saved.reportId,
+            entryIds: args.sourceIds,
+          })
+        : null;
+
       const path = reportPath(args.projectId, saved.reportId);
       const url = buildDashboardUrl(context.baseUrl, path);
 
@@ -170,7 +189,7 @@ export const saveReportTool = {
       });
 
       return mcpResponse({
-        text: `${saved.created ? "Saved" : "Replaced"} report "${saved.title}" (${size(saved.htmlBytes)}). Open it at ${url}. Reply with this link, a one-line verdict, and the single top action — do not paste the report into chat.`,
+        text: `${saved.created ? "Saved" : "Replaced"} report "${saved.title}" (${size(saved.htmlBytes)})${linkedSources != null ? `, linked to ${linkedSources} archived sources` : ""}. Open it at ${url}. Reply with this link, a one-line verdict, and the single top action — do not paste the report into chat.`,
         meta: buildProjectMeta(context, args.projectId, path),
         structuredContent: {
           reportId: saved.reportId,
@@ -332,6 +351,7 @@ export const getReportTool = {
       const path = reportPath(args.projectId, report.id);
       const url = buildDashboardUrl(context.baseUrl, path);
       const shareUrl = await reportShareUrl(report, context.baseUrl);
+      const sources = await listReportSources(args.projectId, report.id);
 
       return mcpResponse({
         // The document goes in `text` only. It is what the agent actually
@@ -342,6 +362,9 @@ export const getReportTool = {
           metaLine(report),
           url,
           shareUrl ? `Public link: ${shareUrl}` : "No public link available.",
+          sources.length > 0
+            ? `Built from ${sources.length} archived results (read free with get_research_archive_entry): ${sources.map((source) => `${source.id} ${source.kind} ${source.target} ${source.fetchedAt}`).join("; ")}`
+            : "No archived sources linked.",
           "",
           report.summary,
           ...(html
@@ -360,6 +383,7 @@ export const getReportTool = {
             url,
             shareUrl,
           },
+          sources,
         },
       });
     },

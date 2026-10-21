@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, lt, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { researchArchiveEntries } from "@/db/schema";
+import { runBatch } from "@/db/runBatch";
+import { reportSources, researchArchiveEntries } from "@/db/schema";
 
 type ArchiveRow = typeof researchArchiveEntries.$inferInsert;
 
@@ -94,7 +95,59 @@ async function deleteEntries(ids: string[]) {
     .where(inArray(researchArchiveEntries.id, ids));
 }
 
+/**
+ * Replaces a report's sources with the given archive entries. Only entries of
+ * the same project are linked; the caller has verified the report is too.
+ */
+async function setReportSources(input: {
+  projectId: string;
+  reportId: string;
+  entryIds: string[];
+}) {
+  const owned =
+    input.entryIds.length === 0
+      ? []
+      : await db
+          .select({ id: researchArchiveEntries.id })
+          .from(researchArchiveEntries)
+          .where(
+            and(
+              eq(researchArchiveEntries.projectId, input.projectId),
+              inArray(researchArchiveEntries.id, input.entryIds.slice(0, 50)),
+            ),
+          );
+  await runBatch((tx) => [
+    tx.delete(reportSources).where(eq(reportSources.reportId, input.reportId)),
+    ...owned.map((entry) =>
+      tx
+        .insert(reportSources)
+        .values({ reportId: input.reportId, archiveEntryId: entry.id })
+        .onConflictDoNothing(),
+    ),
+  ]);
+  return owned.length;
+}
+
+async function listReportSources(projectId: string, reportId: string) {
+  return db
+    .select({ entry: researchArchiveEntries })
+    .from(reportSources)
+    .innerJoin(
+      researchArchiveEntries,
+      eq(researchArchiveEntries.id, reportSources.archiveEntryId),
+    )
+    .where(
+      and(
+        eq(reportSources.reportId, reportId),
+        eq(researchArchiveEntries.projectId, projectId),
+      ),
+    )
+    .orderBy(desc(researchArchiveEntries.fetchedAt));
+}
+
 export const ResearchArchiveRepository = {
+  setReportSources,
+  listReportSources,
   insertEntry,
   findViewAt,
   getEntry,

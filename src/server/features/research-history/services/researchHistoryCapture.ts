@@ -1,4 +1,5 @@
 import type { BillingCustomerContext } from "@/server/billing/subscription";
+import { resolveDomainRating } from "@/server/lib/ahrefsDomainRating";
 import { ResearchHistoryRepository as repo } from "../repositories/ResearchHistoryRepository";
 
 // Capture records a lookup that has already been paid for (or served from
@@ -67,9 +68,14 @@ export async function captureBacklinkSummary(
   const projectId = billingCustomer.projectId;
   if (!projectId) return;
   const { fetchedAt, ...metrics } = input;
+  // Free and cached for a day; a failed lookup just leaves it unrated.
+  const domainRating = await resolveDomainRating(input.domain).catch(
+    () => null,
+  );
   await capture("backlinks", () =>
     repo.upsertBacklinkSnapshot({
       ...metrics,
+      domainRating,
       projectId,
       capturedOn: capturedOn(fetchedAt),
       capturedAt: fetchedAt,

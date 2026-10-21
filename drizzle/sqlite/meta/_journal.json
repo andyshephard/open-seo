@@ -407,6 +407,20 @@
       "when": 1792594034982,
       "tag": "0057_sticky_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1792594396041,
+      "tag": "0058_hot_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1792594494512,
+      "tag": "0059_robust_cloak",
+      "breakpoints": true
     }
   ]
 }

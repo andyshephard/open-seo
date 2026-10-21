@@ -46,6 +46,10 @@ vi.mock(
 vi.mock("@/server/lib/posthog", () => ({
   captureServerEvent: mocks.captureServerEvent,
 }));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  listReportSources: async () => [],
+  setReportSources: async () => 0,
+}));
 
 const projectId = "project_1";
 const reportId = "report_1";

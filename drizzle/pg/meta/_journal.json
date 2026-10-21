@@ -253,6 +253,20 @@
       "when": 1792594035510,
       "tag": "0035_overjoyed_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792594396608,
+      "tag": "0036_dark_vector",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792594495112,
+      "tag": "0037_plain_pet_avengers",
+      "breakpoints": true
     }
   ]
 }

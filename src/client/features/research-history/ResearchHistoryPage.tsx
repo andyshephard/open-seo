@@ -226,6 +226,10 @@ export function ResearchHistoryPage({ projectId }: { projectId: string }) {
                 title="Domain rank"
                 series={backlinkSeries(domains, (p) => p.rank)}
               />
+              <HistoryMetricChart
+                title="Ahrefs Domain Rating"
+                series={backlinkSeries(domains, (p) => p.domainRating)}
+              />
             </div>
 
             <TableCard>

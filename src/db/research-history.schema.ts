@@ -8,6 +8,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { projects } from "./app.schema";
+import { reports } from "./reports.schema";
 
 // ============================================================================
 // Research history: dated snapshots of provider research results, so a project
@@ -73,6 +74,8 @@ export const domainBacklinkSnapshots = sqliteTable(
     newReferringDomains: integer("new_referring_domains"),
     lostReferringDomains: integer("lost_referring_domains"),
     spamScore: integer("spam_score"),
+    // Ahrefs' free Domain Rating at capture time (null when unrated).
+    domainRating: integer("domain_rating"),
     capturedAt: text("captured_at").notNull().default(isoNow),
   },
   (table) => [
@@ -244,5 +247,22 @@ export const gscDailyRows = sqliteTable(
       table.dimension,
       table.date,
     ),
+  ],
+);
+
+// Which archived results a report was built from, so updating or checking a
+// report can reuse that exact data instead of buying it again.
+export const reportSources = sqliteTable(
+  "report_sources",
+  {
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    archiveEntryId: text("archive_entry_id")
+      .notNull()
+      .references(() => researchArchiveEntries.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("report_sources_pair").on(table.reportId, table.archiveEntryId),
   ],
 );

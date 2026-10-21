@@ -139,4 +139,5 @@ export const {
   researchArchiveEntries,
   gscDailyTotals,
   gscDailyRows,
+  reportSources,
 } = schema;

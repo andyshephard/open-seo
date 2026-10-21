@@ -44,10 +44,18 @@ const SECTIONS = {
     kinds: ["keyword_research", "serp_analysis"],
   },
   rank: { label: "Rank Tracking", kinds: ["rank_check_serp"] },
-  analytics: { label: "Google Analytics", kinds: ["ga4_landing_pages"] },
+  analytics: {
+    label: "Google (GA4, URL inspection)",
+    kinds: ["ga4_landing_pages", "url_inspection"],
+  },
   ai: {
     label: "AI search",
-    kinds: ["brand_lookup", "prompt_research", "prompt_explorer"],
+    kinds: [
+      "brand_lookup",
+      "prompt_research",
+      "prompt_explorer",
+      "website_research",
+    ],
   },
   agent: {
     label: "Agent-only lookups",
@@ -97,6 +105,8 @@ const KIND_LABELS: Record<string, string> = {
   prompt_research: "Prompt research",
   prompt_explorer: "Prompt explorer answer",
   ga4_landing_pages: "GA4 organic landing pages",
+  url_inspection: "URL inspection",
+  website_research: "Website research draft",
 };
 
 const ORIGIN_LABELS: Record<string, string> = {
