@@ -3,8 +3,9 @@ import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
 import {
   CACHE_TTL,
+  RESEARCH_FRESHNESS_SECONDS,
   buildCacheKey,
-  getCached,
+  getCachedEntry,
   setCached,
 } from "@/server/lib/r2-cache";
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
@@ -221,7 +222,6 @@ async function buildResearchCacheKey(
   return buildCacheKey("kw:research", {
     cacheVersion: CACHE_VERSION,
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     keywords: normalizedKeywords,
     locationCode: input.locationCode,
     languageCode: input.languageCode,
@@ -292,25 +292,41 @@ export async function research(
         ? { ...input, clickstream: false }
         : input;
   const mode = effectiveInput.mode ?? "auto";
+  // Only the seed reaches the provider, so it alone identifies the result.
   const cacheKey = await buildResearchCacheKey(
     effectiveInput,
-    uniqueKeywords,
+    [seedKeyword],
     mode,
     billingCustomer,
   );
+  const archive = (fetchedAt: string, result: CachedResult) =>
+    archiveLookup(billingCustomer, {
+      kind: "keyword_research",
+      target: seedKeyword,
+      viewKey: cacheKey,
+      params: archiveParams(effectiveInput),
+      market: effectiveInput,
+      fetchedAt,
+      payload: result,
+    });
 
   if (input.asOf)
     return cachedResultSchema.parse(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
 
-  const cachedRaw = await getCached(cacheKey);
-  const cachedResult = cachedResultSchema.safeParse(cachedRaw);
-  const cached: CachedResult | null = cachedResult.success
-    ? cachedResult.data
-    : null;
-
-  if (cached && cached.rows.length > 0) {
+  const cachedEntry = await getCachedEntry(cacheKey, input);
+  const cachedResult = cachedResultSchema.safeParse(cachedEntry?.value);
+  if (cachedEntry && cachedResult.success) {
+    const cached = cachedResult.data;
+    // A project seeing this shared result for the first time also gets its
+    // archive entry and keyword metrics.
+    if (
+      cached.rows.length > 0 &&
+      (await archive(cachedEntry.storedAt, cached)) &&
+      !effectiveInput.locationName
+    )
+      void persistRows(effectiveInput, cached.rows);
     return cached;
   }
 
@@ -343,16 +359,14 @@ export async function research(
             creditFeature,
           );
 
-  await setCached(cacheKey, result, CACHE_TTL.researchResult);
-  await archiveLookup(billingCustomer, {
-    kind: "keyword_research",
-    target: uniqueKeywords.join(", "),
-    viewKey: cacheKey,
-    params: archiveParams(effectiveInput),
-    market: effectiveInput,
-    fetchedAt: new Date().toISOString(),
-    payload: result,
-  });
+  await setCached(
+    cacheKey,
+    result,
+    result.rows.length > 0
+      ? CACHE_TTL.researchResult
+      : RESEARCH_FRESHNESS_SECONDS.empty,
+  );
+  if (result.rows.length > 0) await archive(new Date().toISOString(), result);
   // Keyword metrics are stored per country, so local rows are not persisted.
   if (!effectiveInput.locationName)
     void persistRows(effectiveInput, result.rows);

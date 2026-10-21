@@ -6,7 +6,24 @@ import { sortBy } from "remeda";
  */
 export const CACHE_TTL = {
   /** Related keyword research results */
-  researchResult: 86400,
+  researchResult: 30 * 86400,
+} as const;
+
+/**
+ * How long a paid research result is reused before OpenSEO buys it again
+ * ("balanced" defaults). Provider data moves slowly: Labs domain metrics and
+ * keyword volumes update about monthly, backlink indexes daily, SERPs hourly.
+ * Users and agents can always force a live fetch with `refresh`.
+ */
+export const RESEARCH_FRESHNESS_SECONDS = {
+  domain: 7 * 86400,
+  backlinks: 3 * 86400,
+  keywords: 30 * 86400,
+  serp: 86400,
+  aiSearch: 7 * 86400,
+  local: 7 * 86400,
+  /** Empty results: short, since providers report "no data" transiently. */
+  empty: 6 * 3600,
 } as const;
 
 const CACHE_PREFIX = "dataforseo-cache/";
@@ -34,22 +51,50 @@ export async function buildCacheKey(
 }
 
 /**
- * Get a cached JSON value from R2. Returns null on miss or expiry.
- * Callers should validate the shape with Zod before trusting it — schema
- * drift between writes and reads is otherwise silent.
+ * How fresh a cached provider result must be. `refresh` skips the cache (the
+ * caller pays for a live fetch); `maxAgeDays` tightens the entry's own TTL,
+ * e.g. an agent that needs data from the last day.
  */
-export async function getCached(key: string): Promise<unknown> {
+export type CacheFreshness = { refresh?: boolean; maxAgeDays?: number };
+
+/**
+ * Get a cached JSON value from R2 with the time it was stored. Returns null on
+ * miss, expiry, or when `freshness` rejects it. Callers should validate the
+ * shape with Zod before trusting it — schema drift between writes and reads is
+ * otherwise silent.
+ */
+export async function getCachedEntry(
+  key: string,
+  freshness: CacheFreshness = {},
+): Promise<{ value: unknown; storedAt: string } | null> {
+  if (freshness.refresh) return null;
   const obj = await env.R2.get(`${CACHE_PREFIX}${key}`);
   if (!obj) return null;
 
   const expiresAt = obj.customMetadata?.expiresAt;
   if (expiresAt && Date.parse(expiresAt) < Date.now()) return null;
+  if (
+    freshness.maxAgeDays != null &&
+    Date.now() - obj.uploaded.getTime() > freshness.maxAgeDays * 86_400_000
+  )
+    return null;
 
   try {
-    return JSON.parse(await obj.text());
+    return {
+      value: JSON.parse(await obj.text()) as unknown,
+      storedAt: obj.uploaded.toISOString(),
+    };
   } catch {
     return null;
   }
+}
+
+/** The cached value only; see getCachedEntry. */
+export async function getCached(
+  key: string,
+  freshness?: CacheFreshness,
+): Promise<unknown> {
+  return (await getCachedEntry(key, freshness))?.value ?? null;
 }
 
 /**

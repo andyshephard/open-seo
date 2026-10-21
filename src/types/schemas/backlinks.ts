@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { archiveAsOfSchema } from "@/types/schemas/researchHistory";
+import {
+  archiveAsOfSchema,
+  researchFreshnessShape,
+} from "@/types/schemas/researchHistory";
 import {
   RESEARCH_SCOPES,
   RESEARCH_SCOPE_PARAM_DESCRIPTION,
@@ -51,6 +54,7 @@ export const backlinksLookupSchema = z.object({
   target: z.string().min(1, "Target is required").max(2048),
   scope: backlinksScopeParamSchema.optional(),
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
 });
 
 export const backlinksOverviewInputSchema = backlinksLookupSchema.extend({

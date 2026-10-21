@@ -1,13 +1,19 @@
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
+import {
+  RESEARCH_FRESHNESS_SECONDS,
+  type CacheFreshness,
+} from "@/server/lib/r2-cache";
 import { readArchivedView } from "@/server/features/research-history/services/researchArchive";
 import { archiveBacklinks, recordBacklinkSummary } from "./backlinksHistory";
 import {
+  buildBacklinksDateRange,
+  buildOverviewResult,
+} from "./backlinksOverviewResult";
+import {
   createDataforseoClient,
   normalizeBacklinksTarget,
-  type BacklinksHistoryItem,
-  type BacklinksSummaryItem,
 } from "@/server/lib/dataforseo";
 import type {
   BacklinksLookupInput,
@@ -46,7 +52,6 @@ import {
   mapBacklinksRows,
   mapReferringDomainsRows,
   mapTopPagesRows,
-  normalizeHistoryDate,
 } from "@/server/features/backlinks/services/backlinksRowMappers";
 import { assertFilterConditionBudget } from "@/server/lib/dataforseo/filters";
 import { AppError } from "@/server/lib/errors";
@@ -63,21 +68,16 @@ export type ReferringDomainsPageServiceInput = Omit<
 >;
 export type TopPagesPageServiceInput = Omit<TopPagesPageInput, "projectId">;
 
-const BACKLINKS_OVERVIEW_TTL_SECONDS = 6 * 60 * 60;
-const BACKLINKS_TAB_TTL_SECONDS = 6 * 60 * 60;
+const BACKLINKS_OVERVIEW_TTL_SECONDS = RESEARCH_FRESHNESS_SECONDS.backlinks;
+const BACKLINKS_TAB_TTL_SECONDS = RESEARCH_FRESHNESS_SECONDS.backlinks;
 
 const backlinksOverviewCacheSchema = z.object({
   overview: backlinksOverviewSchema,
 });
 
 export type BacklinksCache = {
-  get(key: string): Promise<unknown>;
+  get(key: string, freshness?: CacheFreshness): Promise<unknown>;
   set(key: string, data: unknown, ttlSeconds: number): Promise<void>;
-};
-
-type BacklinksDateRange = {
-  dateFrom: string;
-  dateTo: string;
 };
 
 export async function profileBacklinksOverview(
@@ -92,10 +92,17 @@ export async function profileBacklinksOverview(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
   const cached = backlinksOverviewCacheSchema.safeParse(
-    await cache.get(cacheKey),
+    await cache.get(cacheKey, input),
   );
   if (cached.success) {
     await recordBacklinkSummary(billingCustomer, cached.data.overview);
+    await archiveBacklinks(billingCustomer, {
+      kind: "backlinks_overview",
+      viewKey: cacheKey,
+      input,
+      fetchedAt: cached.data.overview.fetchedAt,
+      payload: cached.data,
+    });
     return {
       overview: cached.data.overview,
     };
@@ -186,9 +193,16 @@ export async function profileBacklinksRowsPage(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
   const cached = backlinksRowsPageResultSchema.safeParse(
-    await cache.get(cacheKey),
+    await cache.get(cacheKey, input),
   );
   if (cached.success) {
+    await archiveBacklinks(billingCustomer, {
+      kind: "backlinks_rows",
+      viewKey: cacheKey,
+      input,
+      fetchedAt: cached.data.fetchedAt,
+      payload: cached.data,
+    });
     return cached.data;
   }
 
@@ -246,9 +260,16 @@ export async function profileReferringDomainsPage(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
   const cached = referringDomainsPageResultSchema.safeParse(
-    await cache.get(cacheKey),
+    await cache.get(cacheKey, input),
   );
   if (cached.success) {
+    await archiveBacklinks(billingCustomer, {
+      kind: "backlinks_referring_domains",
+      viewKey: cacheKey,
+      input,
+      fetchedAt: cached.data.fetchedAt,
+      payload: cached.data,
+    });
     return cached.data;
   }
 
@@ -303,8 +324,17 @@ export async function profileTopPagesPage(
     return topPagesPageResultSchema.parse(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
-  const cached = topPagesPageResultSchema.safeParse(await cache.get(cacheKey));
+  const cached = topPagesPageResultSchema.safeParse(
+    await cache.get(cacheKey, input),
+  );
   if (cached.success) {
+    await archiveBacklinks(billingCustomer, {
+      kind: "backlinks_top_pages",
+      viewKey: cacheKey,
+      input,
+      fetchedAt: cached.data.fetchedAt,
+      payload: cached.data,
+    });
     return cached.data;
   }
 
@@ -342,90 +372,6 @@ export async function profileTopPagesPage(
   });
 
   return result;
-}
-
-function buildBacklinksDateRange(now: Date): BacklinksDateRange {
-  const todayUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  const dateToUtc = new Date(todayUtc);
-  dateToUtc.setUTCDate(dateToUtc.getUTCDate() - 1);
-
-  const dateFromUtc = new Date(dateToUtc);
-  dateFromUtc.setUTCFullYear(dateFromUtc.getUTCFullYear() - 1);
-
-  return {
-    dateFrom: dateFromUtc.toISOString().slice(0, 10),
-    dateTo: dateToUtc.toISOString().slice(0, 10),
-  };
-}
-
-function buildOverviewResult(args: {
-  normalizedTarget: ReturnType<typeof normalizeBacklinksTarget>;
-  now: Date;
-  summary: BacklinksSummaryItem;
-  history: BacklinksHistoryItem[];
-}): BacklinksOverviewResult {
-  const historyRows = args.history
-    .map((item) => ({
-      date: normalizeHistoryDate(item.date),
-      backlinks: item.backlinks ?? null,
-      referringDomains: item.referring_domains ?? null,
-      rank: item.rank ?? null,
-      newBacklinks: item.new_backlinks ?? null,
-      lostBacklinks: item.lost_backlinks ?? null,
-      newReferringDomains:
-        item.new_referring_domains ?? item.new_reffering_domains ?? null,
-      lostReferringDomains:
-        item.lost_referring_domains ?? item.lost_reffering_domains ?? null,
-    }))
-    .filter(
-      (
-        item,
-      ): item is typeof item & {
-        date: string;
-      } => item.date !== null,
-    );
-
-  return {
-    target: args.normalizedTarget.apiTarget,
-    displayTarget: args.normalizedTarget.displayTarget,
-    scope: args.normalizedTarget.scope,
-    summary: {
-      rank: args.summary.rank ?? null,
-      backlinks: args.summary.backlinks ?? null,
-      referringPages: args.summary.referring_pages ?? null,
-      referringDomains: args.summary.referring_domains ?? null,
-      brokenBacklinks: args.summary.broken_backlinks ?? null,
-      brokenPages: args.summary.broken_pages ?? null,
-      backlinksSpamScore: args.summary.backlinks_spam_score ?? null,
-      targetSpamScore: args.summary.info?.target_spam_score ?? null,
-      newBacklinks: args.summary.new_backlinks ?? null,
-      lostBacklinks: args.summary.lost_backlinks ?? null,
-      newReferringDomains:
-        args.summary.new_referring_domains ??
-        args.summary.new_reffering_domains ??
-        null,
-      lostReferringDomains:
-        args.summary.lost_referring_domains ??
-        args.summary.lost_reffering_domains ??
-        null,
-    },
-    trends: historyRows.map((item) => ({
-      date: item.date,
-      backlinks: item.backlinks,
-      referringDomains: item.referringDomains,
-      rank: item.rank,
-    })),
-    newLostTrends: historyRows.map((item) => ({
-      date: item.date,
-      newBacklinks: item.newBacklinks,
-      lostBacklinks: item.lostBacklinks,
-      newReferringDomains: item.newReferringDomains,
-      lostReferringDomains: item.lostReferringDomains,
-    })),
-    fetchedAt: args.now.toISOString(),
-  };
 }
 
 async function cacheValue(

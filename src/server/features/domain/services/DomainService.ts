@@ -1,5 +1,11 @@
 import { waitUntil } from "cloudflare:workers";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  buildCacheKey,
+  getCachedEntry,
+  RESEARCH_FRESHNESS_SECONDS,
+  setCached,
+  type CacheFreshness,
+} from "@/server/lib/r2-cache";
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
@@ -23,9 +29,6 @@ import {
 type MeteringOverrides = {
   creditFeature?: CreditFeature;
 };
-
-/** Domain overview data is refreshed every 12 hours. */
-const DOMAIN_OVERVIEW_TTL_SECONDS = 12 * 60 * 60;
 
 const domainOverviewResultSchema = z.object({
   domain: z.string(),
@@ -65,7 +68,7 @@ async function getOverview(
     locationCode: number;
     languageCode: string;
     asOf?: string;
-  },
+  } & CacheFreshness,
   billingCustomer: BillingCustomerContext,
   metering: MeteringOverrides = {},
 ): Promise<DomainOverviewResult> {
@@ -74,10 +77,10 @@ async function getOverview(
 
   // domain_rank_overview has no filters and always covers the hostname plus
   // all of its subdomains, so every scope shares one cache entry per hostname.
-  // Callers label the metrics as domain-wide for narrower scopes.
+  // Callers label the metrics as domain-wide for narrower scopes. Provider
+  // data doesn't vary by project, so every project in the org shares it.
   const cacheKey = await buildCacheKey("domain:overview", {
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     domain,
     locationCode: input.locationCode,
     languageCode: input.languageCode,
@@ -92,10 +95,13 @@ async function getOverview(
       displayTarget: target.display,
     };
 
-  const cachedRaw = await getCached(cacheKey);
-  const cached = domainOverviewResultSchema.safeParse(cachedRaw);
-  if (cached.success && cached.data.hasData) {
-    await recordOverview(billingCustomer, input, cached.data);
+  const cachedEntry = await getCachedEntry(cacheKey, input);
+  const cached = domainOverviewResultSchema.safeParse(cachedEntry?.value);
+  if (cached.success) {
+    if (cached.data.hasData) {
+      await recordOverview(billingCustomer, input, cached.data);
+      await archiveOverview(billingCustomer, cacheKey, input, cached.data);
+    }
     return {
       ...cached.data,
       scope: target.scope,
@@ -141,29 +147,44 @@ async function getOverview(
     fetchedAt: nowIso,
   };
 
+  // waitUntil, not void: workerd cancels unregistered pending I/O once the
+  // response is sent, so a fire-and-forget put never persists the cache.
+  // Empty results are cached briefly so a new domain isn't re-bought on
+  // every view.
+  waitUntil(
+    setCached(
+      cacheKey,
+      stored,
+      stored.hasData
+        ? RESEARCH_FRESHNESS_SECONDS.domain
+        : RESEARCH_FRESHNESS_SECONDS.empty,
+    ).catch((error) => {
+      console.error("domain.overview.cache-write failed:", error);
+    }),
+  );
   if (stored.hasData) {
-    // waitUntil, not void: workerd cancels unregistered pending I/O once the
-    // response is sent, so a fire-and-forget put never persists the cache.
-    waitUntil(
-      setCached(cacheKey, stored, DOMAIN_OVERVIEW_TTL_SECONDS).catch(
-        (error) => {
-          console.error("domain.overview.cache-write failed:", error);
-        },
-      ),
-    );
     await recordOverview(billingCustomer, input, stored);
-    await archiveLookup(billingCustomer, {
-      kind: "domain_overview",
-      target: target.display,
-      viewKey: cacheKey,
-      params: {},
-      market: input,
-      fetchedAt: stored.fetchedAt,
-      payload: stored,
-    });
+    await archiveOverview(billingCustomer, cacheKey, input, stored);
   }
 
   return { ...stored, scope: target.scope, displayTarget: target.display };
+}
+
+function archiveOverview(
+  billingCustomer: BillingCustomerContext,
+  viewKey: string,
+  market: { locationCode: number; languageCode: string },
+  overview: z.infer<typeof domainOverviewResultSchema>,
+) {
+  return archiveLookup(billingCustomer, {
+    kind: "domain_overview",
+    target: overview.domain,
+    viewKey,
+    params: {},
+    market,
+    fetchedAt: overview.fetchedAt,
+    payload: overview,
+  });
 }
 
 function recordOverview(
@@ -192,7 +213,7 @@ async function getSuggestedKeywords(
     organizationId: string;
     projectId: string;
     asOf?: string;
-  },
+  } & CacheFreshness,
   billingCustomer: BillingCustomerContext,
   metering: MeteringOverrides = {},
 ): Promise<
@@ -210,7 +231,6 @@ async function getSuggestedKeywords(
 
   const cacheKey = await buildCacheKey("domain:keyword-suggestions", {
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     domain: target.hostname,
     scope: target.scope,
     path: target.path,
@@ -223,9 +243,25 @@ async function getSuggestedKeywords(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
 
-  const cachedRaw = await getCached(cacheKey);
-  const cached = suggestedKeywordsSchema.safeParse(cachedRaw);
-  if (cached.success && cached.data.length > 0) {
+  const archiveSuggestions = (
+    fetchedAt: string,
+    payload: z.infer<typeof suggestedKeywordsSchema>,
+  ) =>
+    archiveLookup(billingCustomer, {
+      kind: "domain_keyword_suggestions",
+      target: target.display,
+      viewKey: cacheKey,
+      params: { scope: target.scope },
+      market: input,
+      fetchedAt,
+      payload,
+    });
+
+  const cachedEntry = await getCachedEntry(cacheKey, input);
+  const cached = suggestedKeywordsSchema.safeParse(cachedEntry?.value);
+  if (cachedEntry && cached.success) {
+    if (cached.data.length > 0)
+      await archiveSuggestions(cachedEntry.storedAt, cached.data);
     return cached.data;
   }
 
@@ -259,27 +295,19 @@ async function getSuggestedKeywords(
       keywordDifficulty: item.keywordDifficulty,
     }));
 
-  if (keywords.length > 0) {
-    await archiveLookup(billingCustomer, {
-      kind: "domain_keyword_suggestions",
-      target: target.display,
-      viewKey: cacheKey,
-      params: { scope: target.scope },
-      market: input,
-      fetchedAt: new Date().toISOString(),
-      payload: keywords,
-    });
-    waitUntil(
-      setCached(cacheKey, keywords, DOMAIN_OVERVIEW_TTL_SECONDS).catch(
-        (error) => {
-          console.error(
-            "domain.keyword-suggestions.cache-write failed:",
-            error,
-          );
-        },
-      ),
-    );
-  }
+  if (keywords.length > 0)
+    await archiveSuggestions(new Date().toISOString(), keywords);
+  waitUntil(
+    setCached(
+      cacheKey,
+      keywords,
+      keywords.length > 0
+        ? RESEARCH_FRESHNESS_SECONDS.domain
+        : RESEARCH_FRESHNESS_SECONDS.empty,
+    ).catch((error) => {
+      console.error("domain.keyword-suggestions.cache-write failed:", error);
+    }),
+  );
 
   return keywords;
 }

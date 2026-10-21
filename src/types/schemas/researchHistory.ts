@@ -32,6 +32,15 @@ export const archiveAsOfSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .optional();
 
+/**
+ * Reuse rules for paid lookups: `refresh` buys a live copy now; `maxAgeDays`
+ * only accepts a stored copy at most that old.
+ */
+export const researchFreshnessShape = {
+  refresh: z.boolean().optional(),
+  maxAgeDays: z.number().min(0).max(365).optional(),
+};
+
 export const listResearchArchiveSchema = z.object({
   projectId: z.string().min(1),
   kinds: z.array(z.enum(RESEARCH_ARCHIVE_KINDS)).max(20).optional(),

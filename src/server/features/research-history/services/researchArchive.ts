@@ -32,6 +32,8 @@ const NON_VIEW_FIELDS = [
   "locationCode",
   "languageCode",
   "asOf",
+  "refresh",
+  "maxAgeDays",
 ] as const;
 
 export function archiveParams(input: object): Record<string, unknown> {
@@ -54,6 +56,7 @@ async function sha256Hex(input: string) {
     .join("");
 }
 
+/** Returns true when this call stored a new entry. */
 export async function archiveLookup(
   customer: BillingCustomerContext,
   entry: {
@@ -67,11 +70,13 @@ export async function archiveLookup(
   },
 ) {
   const projectId = customer.projectId;
-  if (!projectId) return;
+  if (!projectId) return false;
   try {
     const id = (
       await sha256Hex(`${projectId}|${entry.viewKey}|${entry.fetchedAt}`)
     ).slice(0, 32);
+    // Cache hits re-record the same fetch; keep that to one cheap read.
+    if (await repo.getEntry(projectId, id)) return false;
     const r2Key = `${archiveProjectPrefix(projectId)}${entry.fetchedAt.slice(0, 10)}/${id}.json`;
     const body = JSON.stringify(entry.payload);
     await env.R2.put(r2Key, body, {
@@ -91,8 +96,10 @@ export async function archiveLookup(
       r2Key,
       sizeBytes: new TextEncoder().encode(body).byteLength,
     });
+    return true;
   } catch (error) {
     console.error(`research-archive.${entry.kind} failed:`, error);
+    return false;
   }
 }
 

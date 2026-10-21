@@ -10,6 +10,7 @@ import {
   createDataforseoClient,
 } from "@/server/lib/dataforseo";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import { getSerpSnapshot } from "@/server/features/keywords/services/research/serpSnapshot";
 import { normalizeAiSuggestion } from "@/shared/ai-prompt-suggestions";
 import {
   AI_DEFAULT_TOPIC,
@@ -183,12 +184,17 @@ async function loadPrompts(
       limit: RESEARCH_LIMIT,
       orderBy: ["ai_search_volume,desc"],
     }),
-    client.serp.live({
-      keyword: request.topic,
-      locationCode: request.locationCode,
-      languageCode: request.languageCode,
-      depth: RESEARCH_SERP_DEPTH,
-    }),
+    // Shared with Keyword Research and get_serp_results, so a SERP already
+    // bought for this topic is reused.
+    getSerpSnapshot(
+      {
+        keyword: request.topic,
+        locationCode: request.locationCode,
+        languageCode: request.languageCode,
+        depth: RESEARCH_SERP_DEPTH,
+      },
+      customer,
+    ).then((snapshot) => snapshot.items),
   ]);
   const prompts = data.flatMap((item): CachedPrompt[] =>
     item.question?.trim()

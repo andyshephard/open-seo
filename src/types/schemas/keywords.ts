@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { archiveAsOfSchema } from "@/types/schemas/researchHistory";
+import {
+  archiveAsOfSchema,
+  researchFreshnessShape,
+} from "@/types/schemas/researchHistory";
 import { TAG_COLOR_KEYS } from "@/shared/tag-colors";
 import {
   booleanSearchParamSchema,
@@ -45,6 +48,7 @@ export const researchKeywordsSchema = z.object({
   clickstream: z.boolean().optional().default(false),
   groupKeywords: z.boolean().optional().default(false),
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
 });
 
 export const savedKeywordMetricSchema = z.object({
@@ -223,6 +227,7 @@ export const serpAnalysisSchema = z.object({
   // Each 10 of depth is another crawled Google page (~2.5 credits).
   depth: z.union([z.literal(20), z.literal(100)]).default(20),
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
 });
 
 /* ------------------------------------------------------------------ */

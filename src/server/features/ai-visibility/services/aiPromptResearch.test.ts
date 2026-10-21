@@ -32,6 +32,12 @@ vi.mock("@/server/lib/r2-cache", () => ({
   setCached: async () => undefined,
 }));
 vi.mock("./aiVisibilityState", () => ({ getTracker }));
+vi.mock("@/server/features/keywords/services/research/serpSnapshot", () => ({
+  getSerpSnapshot: async (input: unknown) => {
+    const items: unknown = await serpLive(input);
+    return { items };
+  },
+}));
 vi.mock("@/server/features/ai-search/services/access", () => ({
   assertPaidAiSearchPlan: assertPaidPlan,
 }));

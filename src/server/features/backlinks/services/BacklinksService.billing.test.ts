@@ -7,6 +7,7 @@ const domainPagesMock = vi.fn();
 const backlinksHistoryMock = vi.fn();
 
 vi.mock("@/server/lib/r2-cache", () => ({
+  RESEARCH_FRESHNESS_SECONDS: { backlinks: 3 * 86400 },
   buildCacheKey: vi.fn(
     async (prefix: string, params: Record<string, unknown>) =>
       `${prefix}:${JSON.stringify(params)}`,

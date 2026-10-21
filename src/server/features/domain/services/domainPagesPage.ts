@@ -2,7 +2,13 @@ import { waitUntil } from "cloudflare:workers";
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import { createDataforseoClient } from "@/server/lib/dataforseo";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  buildCacheKey,
+  getCachedEntry,
+  RESEARCH_FRESHNESS_SECONDS,
+  setCached,
+  type CacheFreshness,
+} from "@/server/lib/r2-cache";
 import {
   archiveLookup,
   archiveParams,
@@ -21,8 +27,6 @@ import type { ResearchScope } from "@/shared/researchScope";
 import type { RelevantPagesItem } from "@/server/lib/dataforseo";
 import { computeHasMore } from "@/server/features/domain/services/pagination";
 import type { DomainKeywordsFilters } from "@/types/schemas/domain";
-
-const DOMAIN_PAGES_PAGE_TTL_SECONDS = 12 * 60 * 60;
 
 type DomainPagesSortMode = "traffic" | "keywords";
 type DomainPagesSortOrder = "asc" | "desc";
@@ -152,7 +156,7 @@ export async function getPagesPage(
     filters: DomainKeywordsFilters;
     search?: string;
     asOf?: string;
-  },
+  } & CacheFreshness,
   billingCustomer: BillingCustomerContext,
 ): Promise<DomainPagesPageResult> {
   const target = parseResearchTargetOrThrow(input.domain, input.scope);
@@ -163,7 +167,6 @@ export async function getPagesPage(
 
   const cacheKey = await buildCacheKey("domain:pages-page", {
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     domain: target.hostname,
     scope: target.scope,
     path: target.path,
@@ -182,9 +185,22 @@ export async function getPagesPage(
       await readArchivedView(billingCustomer, cacheKey, input.asOf),
     );
 
-  const cachedRaw = await getCached(cacheKey);
-  const cached = domainPagesPageResultSchema.safeParse(cachedRaw);
+  const archive = (result: { fetchedAt: string }) =>
+    archiveLookup(billingCustomer, {
+      kind: "domain_pages",
+      target: target.display,
+      viewKey: cacheKey,
+      params: archiveParams(input),
+      market: input,
+      fetchedAt: result.fetchedAt,
+      payload: result,
+    });
+
+  const cached = domainPagesPageResultSchema.safeParse(
+    (await getCachedEntry(cacheKey, input))?.value,
+  );
   if (cached.success) {
+    await archive(cached.data);
     return cached.data;
   }
 
@@ -224,20 +240,12 @@ export async function getPagesPage(
     fetchedAt: new Date().toISOString(),
   };
 
-  await archiveLookup(billingCustomer, {
-    kind: "domain_pages",
-    target: target.display,
-    viewKey: cacheKey,
-    params: archiveParams(input),
-    market: input,
-    fetchedAt: result.fetchedAt,
-    payload: result,
-  });
+  await archive(result);
 
   // waitUntil, not void: workerd cancels unregistered pending I/O once the
   // response is sent, so a fire-and-forget put never persists the cache.
   waitUntil(
-    setCached(cacheKey, result, DOMAIN_PAGES_PAGE_TTL_SECONDS).catch(
+    setCached(cacheKey, result, RESEARCH_FRESHNESS_SECONDS.domain).catch(
       (error) => {
         console.error("domain.pages-page.cache-write failed:", error);
       },

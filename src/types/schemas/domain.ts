@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { archiveAsOfSchema } from "@/types/schemas/researchHistory";
+import {
+  archiveAsOfSchema,
+  researchFreshnessShape,
+} from "@/types/schemas/researchHistory";
 import { isValidDomainHost, researchScopeSchema } from "@/shared/researchScope";
 
 /**
@@ -45,6 +48,7 @@ export const booleanSearchParamSchema = z
 
 export const domainOverviewSchema = z.object({
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
   projectId: z.string().uuid(),
   domain: z.string().min(1, "Domain is required").max(2048),
   scope: researchScopeSchema.optional(),
@@ -62,6 +66,7 @@ const domainTabs = ["keywords", "pages"] as const;
 
 export const domainKeywordSuggestionsSchema = z.object({
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
   projectId: z.string().uuid(),
   domain: z.string().min(1, "Domain is required").max(2048),
   scope: researchScopeSchema.optional(),
@@ -108,6 +113,7 @@ export type DomainKeywordsFilters = z.infer<typeof domainKeywordsFiltersSchema>;
 
 export const domainKeywordsPageRequestSchema = z.object({
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
   projectId: z.string().uuid(),
   domain: z.string().min(1).max(2048),
   scope: researchScopeSchema.optional(),
@@ -131,6 +137,7 @@ const domainPagesSortModes = ["traffic", "keywords"] as const;
 
 export const domainPagesPageRequestSchema = z.object({
   asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
   projectId: z.string().uuid(),
   domain: z.string().min(1).max(2048),
   scope: researchScopeSchema.optional(),
