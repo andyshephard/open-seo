@@ -176,6 +176,7 @@ const resolveSelfHostAccess = (
   stage: string,
   provision: boolean,
   workersSubdomain: string,
+  customDomain: string,
 ) =>
   Effect.gen(function* () {
     let teamDomain = yield* optionalVar("TEAM_DOMAIN");
@@ -250,7 +251,7 @@ const resolveSelfHostAccess = (
         applicationId: "SelfHostAccess",
         policyName: `open-seo ${stage} self-host users`,
         applicationName: `open-seo ${stage}`,
-        domain: `${workerName(stage)}.${subdomain}`,
+        domain: customDomain || `${workerName(stage)}.${subdomain}`,
         emails: allowedEmails,
       });
       policyAud = application.aud;
@@ -354,10 +355,16 @@ export default Alchemy.Stack(
       authUrl = "";
     }
 
+    // Local patch (Trivela): serve the self-host deploy from a custom domain.
+    // The Access gate moves to that hostname, so workers.dev is switched off
+    // below to leave no ungated copy.
+    const selfHostDomain = prod ? "" : yield* optionalVar("SELFHOST_DOMAIN");
+
     const access = yield* resolveSelfHostAccess(
       stage,
       authMode === "cloudflare_access" && !prod,
       workersSubdomain,
+      selfHostDomain,
     );
 
     // Created once and bound into BOTH workers — they share the same
@@ -427,7 +434,12 @@ export default Alchemy.Stack(
     const app = yield* Cloudflare.Worker("open-seo", {
       name: workerName(stage),
       // Prod serves the real domains; the zone is inferred from the hostname.
-      domain: prod ? ["app.openseo.so", "www.app.openseo.so"] : undefined,
+      domain: prod
+        ? ["app.openseo.so", "www.app.openseo.so"]
+        : selfHostDomain
+          ? [selfHostDomain]
+          : undefined,
+      ...(selfHostDomain ? { url: false } : {}),
       // Prebuilt worker from `vite build` (@cloudflare/vite-plugin). The entry
       // exports the DO + WorkflowEntrypoint classes (re-exported by
       // src/server.ts), which `bundle: false` requires. Sibling chunks under
