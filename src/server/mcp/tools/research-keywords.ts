@@ -21,6 +21,7 @@ import {
   languageCodeSchema,
   locationCodeSchema,
   projectIdSchema,
+  freshnessInputSchema,
 } from "@/server/mcp/schemas";
 
 const LOCAL_VOLUME_CREDITS = Math.ceil(
@@ -68,6 +69,7 @@ const inputSchema = {
     .describe(
       "Include similar keyword variants that can share volume, CPC, and competition. Default false returns only core keywords (DataForSEO ignore_synonyms=true). True includes variants (ignore_synonyms=false). This filters keywords, not metric estimates. Do not sum shared volumes. No effect for countries served from Google Ads data.",
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -112,7 +114,7 @@ export const researchKeywordsTool = {
   config: {
     title: "Research keywords (bulk)",
     description:
-      "Research keyword data (search volume, difficulty, CPC, related ideas) for 1-5 seed keywords in one call. Charges credits per seed (~54 at the default result limit, ~110 at 500, plus ~40 more (~95 at 500) when an obscure seed needs a fallback lookup; flat ~96 for countries served from Google Ads data, where difficulty/intent are unavailable). Returns per-seed results — a single bad seed won't fail the batch.",
+      "Research keyword data (search volume, difficulty, CPC, related ideas) for 1-5 seed keywords in one call. Charges credits per seed (~54 at the default result limit, ~110 at 500, plus ~40 more (~95 at 500) when an obscure seed needs a fallback lookup; flat ~96 for countries served from Google Ads data, where difficulty/intent are unavailable). Returns per-seed results — a single bad seed won't fail the batch. Stored results are reused free inside the freshness window (30 days); pass refresh: true to buy a live copy, or maxAgeDays to accept only newer data. Before buying, check get_research_history (dated trends) and list_research_archive (every past result in full) — both free.",
     inputSchema,
     outputSchema: z.looseObject({
       results: z.array(
@@ -164,6 +166,8 @@ export const researchKeywordsTool = {
               mode: "auto",
               clickstream: args.includeClickstreamData ?? false,
               groupKeywords: args.groupKeywords ?? false,
+              refresh: args.refresh,
+              maxAgeDays: args.maxAgeDays,
             },
             context.billing,
           );

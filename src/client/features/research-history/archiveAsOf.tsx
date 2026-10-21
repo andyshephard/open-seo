@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { History } from "lucide-react";
-import { createContext, useContext, type ReactNode } from "react";
+import { History, RefreshCw } from "lucide-react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { unique } from "remeda";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -13,12 +13,25 @@ import {
 import { listResearchArchive } from "@/serverFunctions/researchHistory";
 import type { ResearchArchiveKind } from "@/types/schemas/researchHistory";
 
-// The archived day (YYYY-MM-DD) a research page is showing, or undefined for
-// live data. Query hooks read it so every tab of the page switches together.
-const ArchiveAsOfContext = createContext<string | undefined>(undefined);
+// What a research page's queries should read: an archived day (YYYY-MM-DD),
+// or stored data within the freshness window, or — right after "Refresh live"
+// on this exact view — a live copy. Query hooks read it so every tab of the
+// page switches together; `refreshNonce` keeps refreshed results under their
+// own query keys.
+type ArchiveViewState = {
+  asOf: string | undefined;
+  refresh: boolean;
+  refreshNonce: number;
+};
 
-export function useArchiveAsOf() {
-  return useContext(ArchiveAsOfContext);
+const ArchiveViewContext = createContext<ArchiveViewState>({
+  asOf: undefined,
+  refresh: false,
+  refreshNonce: 0,
+});
+
+export function useArchiveView() {
+  return useContext(ArchiveViewContext);
 }
 
 const LIVE = "live";
@@ -31,6 +44,7 @@ export function ArchiveView({
   projectId,
   kinds,
   target,
+  viewKey,
   asOf,
   onAsOfChange,
   children,
@@ -38,11 +52,19 @@ export function ArchiveView({
   projectId: string;
   kinds: ResearchArchiveKind[];
   target: string;
+  /** Identifies the current view (URL search); a refresh applies only to it. */
+  viewKey: string;
   asOf: string | undefined;
   onAsOfChange: (asOf: string | undefined) => void;
   children: ReactNode;
 }) {
   const trimmed = target.trim();
+  const [refreshed, setRefreshed] = useState({ nonce: 0, viewKey: "" });
+  const state: ArchiveViewState = {
+    asOf,
+    refresh: refreshed.nonce > 0 && refreshed.viewKey === viewKey && !asOf,
+    refreshNonce: refreshed.nonce,
+  };
   const datesQuery = useQuery({
     enabled: trimmed !== "",
     queryKey: ["researchArchiveDates", projectId, kinds, trimmed],
@@ -71,8 +93,8 @@ export function ArchiveView({
   ];
 
   return (
-    <ArchiveAsOfContext.Provider value={asOf}>
-      {trimmed !== "" && (options.length > 0 || asOf) ? (
+    <ArchiveViewContext.Provider value={state}>
+      {trimmed !== "" ? (
         <div className="px-4 pt-4 md:px-6">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 text-sm">
             <History className="size-4 text-muted-foreground" />
@@ -114,15 +136,33 @@ export function ArchiveView({
                 </Button>
               </>
             ) : (
-              <span className="text-muted-foreground">
-                {options.length} archived{" "}
-                {options.length === 1 ? "day" : "days"} for this target
-              </span>
+              <>
+                <span className="text-muted-foreground">
+                  Stored results are reused until they go stale.
+                  {options.length > 0
+                    ? ` ${options.length} archived ${options.length === 1 ? "day" : "days"} for this target.`
+                    : ""}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Buys fresh data for this view from the provider"
+                  onClick={() =>
+                    setRefreshed((previous) => ({
+                      nonce: previous.nonce + 1,
+                      viewKey,
+                    }))
+                  }
+                >
+                  <RefreshCw data-icon="inline-start" />
+                  Refresh live (uses credits)
+                </Button>
+              </>
             )}
           </div>
         </div>
       ) : null}
       {children}
-    </ArchiveAsOfContext.Provider>
+    </ArchiveViewContext.Provider>
   );
 }

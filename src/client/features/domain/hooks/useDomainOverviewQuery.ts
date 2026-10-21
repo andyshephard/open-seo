@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useArchiveAsOf } from "@/client/features/research-history/archiveAsOf";
+import { useArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { getDomainOverview } from "@/serverFunctions/domain";
 import type { ResearchScope } from "@/shared/researchScope";
 
@@ -12,7 +12,7 @@ type Input = {
 
 export function useDomainOverviewQuery(input: Input) {
   const trimmedDomain = input.domain.trim();
-  const asOf = useArchiveAsOf();
+  const { asOf, refresh, refreshNonce } = useArchiveView();
 
   return useQuery({
     enabled: trimmedDomain !== "",
@@ -23,6 +23,7 @@ export function useDomainOverviewQuery(input: Input) {
       input.scope,
       input.locationCode,
       asOf,
+      refreshNonce,
     ],
     queryFn: () =>
       getDomainOverview({
@@ -32,6 +33,7 @@ export function useDomainOverviewQuery(input: Input) {
           scope: input.scope,
           locationCode: input.locationCode,
           asOf,
+          refresh,
         },
       }),
     staleTime: 5 * 60_000,

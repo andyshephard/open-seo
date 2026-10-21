@@ -15,6 +15,7 @@ export const Route = createFileRoute("/_app/p/$projectId/backlinks")({
 function BacklinksRoute() {
   const { projectId } = Route.useParams();
   const navigate = useNavigate({ from: Route.fullPath });
+  const search = Route.useSearch();
   const {
     target = "",
     scope: rawScope,
@@ -26,7 +27,7 @@ function BacklinksRoute() {
     view,
     includeSpam,
     asOf,
-  } = Route.useSearch();
+  } = search;
   const scope = rawScope ?? defaultScopeForInput(target);
 
   return (
@@ -39,6 +40,7 @@ function BacklinksRoute() {
         "backlinks_top_pages",
       ]}
       target={target}
+      viewKey={JSON.stringify(search)}
       asOf={asOf}
       onAsOfChange={(next) =>
         void navigate({ search: (prev) => ({ ...prev, asOf: next }) })

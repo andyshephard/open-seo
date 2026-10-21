@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/client/components/ui/table";
 import { listResearchArchive } from "@/serverFunctions/researchHistory";
+import { ArchiveEntrySheet } from "./ArchiveEntrySheet";
 import type { ResearchArchiveKind } from "@/types/schemas/researchHistory";
 
 type Entry = Awaited<ReturnType<typeof listResearchArchive>>["entries"][number];
@@ -43,9 +44,25 @@ const SECTIONS = {
     kinds: ["keyword_research", "serp_analysis"],
   },
   rank: { label: "Rank Tracking", kinds: ["rank_check_serp"] },
+  ai: {
+    label: "AI search",
+    kinds: ["brand_lookup", "prompt_research", "prompt_explorer"],
+  },
   agent: {
     label: "Agent-only lookups",
-    kinds: ["ranked_keywords", "keyword_metrics", "domain_keyword_suggestions"],
+    kinds: [
+      "ranked_keywords",
+      "keyword_metrics",
+      "domain_keyword_suggestions",
+      "serp_competitors",
+      "local_businesses",
+      "local_serp",
+      "local_rank_grid",
+      "business_questions",
+      "business_profile",
+      "business_reviews",
+      "business_updates",
+    ],
   },
 } satisfies Record<
   string,
@@ -67,11 +84,23 @@ const KIND_LABELS: Record<string, string> = {
   keyword_metrics: "Keyword metrics (agent)",
   serp_analysis: "SERP",
   rank_check_serp: "Rank check SERP",
+  serp_competitors: "SERP competitors (agent)",
+  local_businesses: "Local businesses (agent)",
+  local_serp: "Local SERP (agent)",
+  local_rank_grid: "Local rank grid (agent)",
+  business_questions: "Business Q&A (agent)",
+  business_profile: "Business profile (agent)",
+  business_reviews: "Business reviews (agent)",
+  business_updates: "Business posts (agent)",
+  brand_lookup: "Brand lookup",
+  prompt_research: "Prompt research",
+  prompt_explorer: "Prompt explorer answer",
 };
 
 const ORIGIN_LABELS: Record<string, string> = {
   app: "App",
-  mcp: "Agent",
+  mcp: "Agent (MCP)",
+  sam: "SAM",
   schedule: "Schedule",
 };
 
@@ -89,7 +118,15 @@ function readConfigId(params: string) {
   }
 }
 
-function OpenLink({ projectId, entry }: { projectId: string; entry: Entry }) {
+function OpenLink({
+  projectId,
+  entry,
+  onView,
+}: {
+  projectId: string;
+  entry: Entry;
+  onView: (id: string) => void;
+}) {
   const asOf = entry.fetchedAt.slice(0, 10);
   switch (entry.kind) {
     case "domain_overview":
@@ -158,7 +195,9 @@ function OpenLink({ projectId, entry }: { projectId: string; entry: Entry }) {
     }
     default:
       return (
-        <span className="text-xs text-muted-foreground">Via MCP only</span>
+        <Button size="sm" variant="ghost" onClick={() => onView(entry.id)}>
+          View
+        </Button>
       );
   }
 }
@@ -166,6 +205,7 @@ function OpenLink({ projectId, entry }: { projectId: string; entry: Entry }) {
 /** Every archived research lookup in the project, newest first. */
 export function ResearchArchiveLog({ projectId }: { projectId: string }) {
   const [section, setSection] = useState<Section>("all");
+  const [viewing, setViewing] = useState<string | null>(null);
   const kinds = SECTIONS[section].kinds;
   const logQuery = useInfiniteQuery({
     queryKey: ["researchArchiveLog", projectId, section],
@@ -248,7 +288,11 @@ export function ResearchArchiveLog({ projectId }: { projectId: string }) {
                     {ORIGIN_LABELS[entry.origin] ?? entry.origin}
                   </TableCell>
                   <TableCell className="text-right">
-                    <OpenLink projectId={projectId} entry={entry} />
+                    <OpenLink
+                      projectId={projectId}
+                      entry={entry}
+                      onView={setViewing}
+                    />
                   </TableCell>
                 </TableRow>
               ))
@@ -256,6 +300,11 @@ export function ResearchArchiveLog({ projectId }: { projectId: string }) {
           </TableBody>
         </Table>
       </TableCard>
+      <ArchiveEntrySheet
+        projectId={projectId}
+        entryId={viewing}
+        onClose={() => setViewing(null)}
+      />
       {logQuery.hasNextPage ? (
         <Button
           size="sm"

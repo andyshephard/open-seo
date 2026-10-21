@@ -12,7 +12,7 @@ import {
   readPath,
   type McpTableColumn,
 } from "@/server/mcp/table";
-import { projectIdSchema } from "@/server/mcp/schemas";
+import { freshnessInputSchema, projectIdSchema } from "@/server/mcp/schemas";
 import {
   BACKLINKS_SCOPE_DESCRIPTION,
   backlinksScopeWithLegacySchema,
@@ -46,6 +46,7 @@ const inputSchema = {
     .boolean()
     .optional()
     .describe("Filter out spammy referring domains. Defaults to true."),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -59,7 +60,7 @@ export const getBacklinksOverviewTool = {
   config: {
     title: "Get backlinks overview",
     description:
-      "Returns a backlinks profile summary (total backlinks, referring domains, top referring domains). Charges credits (~50 typical for a domain, ~25 for a single page). Note: bare domains default to scope 'subdomains'; pass scope 'domain' to exclude subdomains from the totals. Targets with a path default to 'subfolder', whose counts come from filtered backlink totals (no rank/trends/referring-domain breakdown). Trend data always includes subdomains (provider limitation). Self-hosted deployments need the Backlinks API enabled on their DataForSEO account.",
+      "Returns a backlinks profile summary (total backlinks, referring domains, top referring domains). Charges credits (~50 typical for a domain, ~25 for a single page). Note: bare domains default to scope 'subdomains'; pass scope 'domain' to exclude subdomains from the totals. Targets with a path default to 'subfolder', whose counts come from filtered backlink totals (no rank/trends/referring-domain breakdown). Trend data always includes subdomains (provider limitation). Self-hosted deployments need the Backlinks API enabled on their DataForSEO account. Stored results are reused free inside the freshness window (3 days); pass refresh: true to buy a live copy, or maxAgeDays to accept only newer data. Before buying, check get_research_history (dated trends) and list_research_archive (every past result in full) — both free.",
     inputSchema,
     outputSchema: z.looseObject({
       target: z.string(),
@@ -79,6 +80,8 @@ export const getBacklinksOverviewTool = {
     const lookup = {
       target: args.target,
       scope: args.scope ? resolveBacklinksScope(args.scope) : undefined,
+      refresh: args.refresh,
+      maxAgeDays: args.maxAgeDays,
     };
     const spamOptions = { hideSpam: args.hideSpam ?? true };
     // referring_domains has no URL filter, so the per-domain breakdown is

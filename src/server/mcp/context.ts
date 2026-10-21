@@ -163,13 +163,14 @@ export function createMcpToolContext(
 export function buildBillingCustomer(
   auth: Pick<ToolAuthContext, "userId" | "userEmail" | "organizationId">,
   projectId: string,
+  origin: "mcp" | "sam" = "mcp",
 ): BillingCustomerContext {
   return {
     userId: auth.userId,
     userEmail: auth.userEmail,
     organizationId: auth.organizationId,
     projectId,
-    origin: "mcp",
+    origin,
   };
 }
 

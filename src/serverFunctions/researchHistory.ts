@@ -92,3 +92,18 @@ export const getRankCheckSerp = createServerFn({ method: "POST" })
       ...rankCheckSerpSchema.parse(entry.result),
     };
   });
+
+/**
+ * One archived result for the in-app viewer. The result is returned as JSON
+ * text: it is arbitrary provider data, rendered generically by the client.
+ */
+export const getResearchArchiveEntry = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(projectIdInputSchema.extend({ id: z.string().min(1).max(64) }))
+  .handler(async ({ data, context }) => {
+    const { result, ...entry } = await getArchiveEntry(
+      context.projectId,
+      data.id,
+    );
+    return { ...entry, resultJson: JSON.stringify(result ?? null) };
+  });

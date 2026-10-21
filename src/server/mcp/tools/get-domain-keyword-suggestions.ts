@@ -21,6 +21,7 @@ import {
   languageCodeSchema,
   locationCodeSchema,
   projectIdSchema,
+  freshnessInputSchema,
 } from "@/server/mcp/schemas";
 import {
   RESEARCH_SCOPE_PARAM_DESCRIPTION,
@@ -49,6 +50,7 @@ const inputSchema = {
     .describe(RESEARCH_SCOPE_PARAM_DESCRIPTION),
   locationCode: locationCodeSchema.optional(),
   languageCode: languageCodeSchema.optional(),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -58,7 +60,7 @@ export const getDomainKeywordSuggestionsTool = {
   config: {
     title: "Get domain keyword opportunities",
     description:
-      "Returns the organic keywords a domain ranks for, including position and available metrics. Use after get_domain_overview when you want the detailed keyword opportunity list for a competitor or reference domain. Charges credits (~100-300 typical). Cached for 12 hours.",
+      "Returns the organic keywords a domain ranks for, including position and available metrics. Use after get_domain_overview when you want the detailed keyword opportunity list for a competitor or reference domain. Charges credits (~100-300 typical). Stored results are reused free inside the freshness window (7 days); pass refresh: true to buy a live copy, or maxAgeDays to accept only newer data. Before buying, check get_research_history (dated trends) and list_research_archive (every past result in full) — both free.",
     inputSchema,
     outputSchema: z.looseObject({
       keywords: z.array(looseObjectOutputSchema),
@@ -87,6 +89,8 @@ export const getDomainKeywordSuggestionsTool = {
         languageCode,
         organizationId: context.auth.organizationId,
         projectId: args.projectId,
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
       },
       context.billing,
     );

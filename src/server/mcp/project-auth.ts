@@ -7,6 +7,12 @@ type ProjectScopedArgs = {
   projectId: string;
 };
 
+// SAM runs the same tool handlers inside a chat turn; label its lookups apart
+// from external MCP clients in the research archive.
+function origin(toolContext: ToolContext) {
+  return toolContext.turnId ? ("sam" as const) : ("mcp" as const);
+}
+
 async function requireProjectAccess(
   toolContext: ToolContext,
   projectId: string,
@@ -40,7 +46,11 @@ async function requireProjectAccess(
     return {
       auth: projectAuth,
       baseUrl,
-      billing: buildBillingCustomer(projectAuth, projectId),
+      billing: buildBillingCustomer(
+        projectAuth,
+        projectId,
+        origin(toolContext),
+      ),
       project: resolved.project,
     };
   }
@@ -59,7 +69,7 @@ async function requireProjectAccess(
   return {
     auth,
     baseUrl,
-    billing: buildBillingCustomer(auth, projectId),
+    billing: buildBillingCustomer(auth, projectId, origin(toolContext)),
     // The row is already fetched for the auth gate; exposing it lets tools
     // fall back to the project's default market without another query.
     project,

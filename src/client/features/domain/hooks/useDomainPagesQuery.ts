@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useArchiveAsOf } from "@/client/features/research-history/archiveAsOf";
+import { useArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { getDomainPagesPage } from "@/serverFunctions/domain";
 import { toPageSortMode } from "@/client/features/domain/utils";
 import type { ResearchScope } from "@/shared/researchScope";
@@ -24,7 +24,7 @@ type DomainPagesQueryInput = {
 
 export function useDomainPagesQuery(input: DomainPagesQueryInput) {
   const pageSortMode = toPageSortMode(input.sortMode);
-  const asOf = useArchiveAsOf();
+  const { asOf, refresh, refreshNonce } = useArchiveView();
   return useQuery({
     enabled: input.enabled && Boolean(input.domain),
     queryKey: [
@@ -38,6 +38,7 @@ export function useDomainPagesQuery(input: DomainPagesQueryInput) {
       pageSortMode,
       input.sortOrder,
       asOf,
+      refreshNonce,
       input.appliedFilters,
     ],
     queryFn: () =>
@@ -52,6 +53,7 @@ export function useDomainPagesQuery(input: DomainPagesQueryInput) {
           sortMode: pageSortMode,
           sortOrder: input.sortOrder,
           asOf,
+          refresh,
           filters: input.appliedFilters,
         },
       }),

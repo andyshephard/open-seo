@@ -59,6 +59,7 @@ function DomainOverviewRoute() {
       projectId={projectId}
       kinds={["domain_overview", "domain_keywords", "domain_pages"]}
       target={routeState.domain}
+      viewKey={JSON.stringify(search)}
       asOf={search.asOf}
       onAsOfChange={(asOf) =>
         void navigate({ search: (prev) => ({ ...prev, asOf }) })

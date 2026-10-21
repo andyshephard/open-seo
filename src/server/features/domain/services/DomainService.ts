@@ -18,6 +18,7 @@ import { mapKeywordItem } from "@/server/features/domain/services/domainKeywordM
 import { getKeywordsPage } from "@/server/features/domain/services/domainKeywordsPage";
 import { getPagesPage } from "@/server/features/domain/services/domainPagesPage";
 import { captureDomainOverview } from "@/server/features/research-history/services/researchHistoryCapture";
+import { ResearchHistoryRepository } from "@/server/features/research-history/repositories/ResearchHistoryRepository";
 import {
   archiveLookup,
   readArchivedView,
@@ -104,6 +105,7 @@ async function getOverview(
     }
     return {
       ...cached.data,
+      ...(await storedBacklinkTotals(input.projectId, domain)),
       scope: target.scope,
       displayTarget: target.display,
     };
@@ -167,7 +169,34 @@ async function getOverview(
     await archiveOverview(billingCustomer, cacheKey, input, stored);
   }
 
-  return { ...stored, scope: target.scope, displayTarget: target.display };
+  return {
+    ...stored,
+    ...(await storedBacklinkTotals(input.projectId, domain)),
+    scope: target.scope,
+    displayTarget: target.display,
+  };
+}
+
+/**
+ * Backlink totals from the domain's latest stored backlinks lookup (free),
+ * since the rank overview carries none. Null when it was never looked up.
+ */
+async function storedBacklinkTotals(projectId: string, domain: string) {
+  const since = new Date(Date.now() - 90 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const latest = (
+    await ResearchHistoryRepository.listBacklinkSnapshots({
+      projectId,
+      domains: [domain],
+      includeSubdomains: true,
+      since,
+    })
+  ).at(-1);
+  return {
+    backlinks: latest?.backlinks ?? null,
+    referringDomains: latest?.referringDomains ?? null,
+  };
 }
 
 function archiveOverview(

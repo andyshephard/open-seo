@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useArchiveAsOf } from "@/client/features/research-history/archiveAsOf";
+import { useArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { getDomainKeywordsPage } from "@/serverFunctions/domain";
 import type { ResearchScope } from "@/shared/researchScope";
 import type {
@@ -49,7 +49,7 @@ function toFiltersPayload(
 
 export function useDomainKeywordsQuery(input: DomainKeywordsQueryInput) {
   const filtersPayload = toFiltersPayload(input.appliedFilters);
-  const asOf = useArchiveAsOf();
+  const { asOf, refresh, refreshNonce } = useArchiveView();
   return useQuery({
     enabled: input.enabled && Boolean(input.domain),
     queryKey: [
@@ -63,6 +63,7 @@ export function useDomainKeywordsQuery(input: DomainKeywordsQueryInput) {
       input.sortMode,
       input.sortOrder,
       asOf,
+      refreshNonce,
       filtersPayload,
     ],
     queryFn: () =>
@@ -77,6 +78,7 @@ export function useDomainKeywordsQuery(input: DomainKeywordsQueryInput) {
           sortMode: input.sortMode,
           sortOrder: input.sortOrder,
           asOf,
+          refresh,
           filters: filtersPayload,
         },
       }),

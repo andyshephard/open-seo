@@ -19,7 +19,7 @@ export type BillingCustomerContext = Pick<
 > & {
   projectId?: string;
   /** Where the request came from, recorded with archived research results. */
-  origin?: "app" | "mcp" | "schedule";
+  origin?: "app" | "mcp" | "sam" | "schedule";
 };
 
 // Existence is monotonic and the Autumn customer id is always the org id we

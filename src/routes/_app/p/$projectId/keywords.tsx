@@ -46,6 +46,7 @@ function KeywordResearchPageRoute() {
       projectId={projectId}
       kinds={["keyword_research", "serp_analysis"]}
       target={keywordInput}
+      viewKey={JSON.stringify(search)}
       asOf={search.asOf}
       onAsOfChange={(asOf) =>
         void navigate({ search: (prev) => ({ ...prev, asOf }) })
