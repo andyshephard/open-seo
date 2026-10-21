@@ -9,6 +9,11 @@ import {
 } from "@/server/lib/r2-cache";
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
 import { captureKeywordMetrics } from "@/server/features/research-history/services/researchHistoryCapture";
+import {
+  archiveLookup,
+  archiveParams,
+  readArchivedView,
+} from "@/server/features/research-history/services/researchArchive";
 import type { KeywordResearchRow } from "@/types/keywords";
 import type { ResolvedResearchKeywordsInput } from "@/types/schemas/keywords";
 import { z } from "zod";
@@ -294,6 +299,11 @@ export async function research(
     billingCustomer,
   );
 
+  if (input.asOf)
+    return cachedResultSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
+
   const cachedRaw = await getCached(cacheKey);
   const cachedResult = cachedResultSchema.safeParse(cachedRaw);
   const cached: CachedResult | null = cachedResult.success
@@ -334,6 +344,15 @@ export async function research(
           );
 
   await setCached(cacheKey, result, CACHE_TTL.researchResult);
+  await archiveLookup(billingCustomer, {
+    kind: "keyword_research",
+    target: uniqueKeywords.join(", "),
+    viewKey: cacheKey,
+    params: archiveParams(effectiveInput),
+    market: effectiveInput,
+    fetchedAt: new Date().toISOString(),
+    payload: result,
+  });
   // Keyword metrics are stored per country, so local rows are not persisted.
   if (!effectiveInput.locationName)
     void persistRows(effectiveInput, result.rows);

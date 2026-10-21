@@ -15,6 +15,11 @@ vi.mock("@/server/lib/r2-cache", () => ({
   setCached: vi.fn(async () => undefined),
 }));
 
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: vi.fn(),
+  archiveParams: vi.fn(() => ({})),
+  readArchivedView: vi.fn(),
+}));
 vi.mock(
   "@/server/features/research-history/services/researchHistoryCapture",
   () => ({ captureBacklinkSummary: vi.fn() }),

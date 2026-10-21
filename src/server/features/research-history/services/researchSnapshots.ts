@@ -7,6 +7,7 @@ import { ProjectContextRepository } from "@/server/features/project-context/repo
 import { computeNextCheckAt } from "@/shared/rank-tracking";
 import type { ResearchSnapshotInterval } from "@/types/schemas/researchHistory";
 import { ResearchHistoryRepository as repo } from "../repositories/ResearchHistoryRepository";
+import { pruneResearchArchive } from "./researchArchive";
 
 // The project's own domain plus this many saved competitors per snapshot.
 const MAX_COMPETITORS = 10;
@@ -115,6 +116,11 @@ function retentionCutoff(now: Date) {
 
 /** Cron body: capture every due project, then prune its expired history. */
 export async function runScheduledResearchSnapshots() {
+  try {
+    await pruneResearchArchive();
+  } catch (error) {
+    console.error("[research-history] archive retention sweep failed", error);
+  }
   const deadline = Date.now() + TICK_DEADLINE_MS;
   for (const {
     schedule,
@@ -140,6 +146,7 @@ export async function runScheduledResearchSnapshots() {
           userId: "system",
           userEmail: "system@openseo.so",
           projectId,
+          origin: "schedule",
         },
         {
           domain,

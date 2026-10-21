@@ -125,3 +125,41 @@ export const researchSnapshotSchedules = pgTable(
     index("research_snapshot_schedules_due_idx").on(table.nextCheckAt),
   ],
 );
+
+export const researchArchiveEntries = pgTable(
+  "research_archive_entries",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    target: text("target").notNull(),
+    viewKey: text("view_key").notNull(),
+    params: text("params").notNull(),
+    locationCode: integer("location_code"),
+    languageCode: text("language_code"),
+    origin: text("origin").notNull(),
+    fetchedAt: text("fetched_at").notNull(),
+    r2Key: text("r2_key").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+  },
+  (table) => [
+    index("research_archive_target_idx").on(
+      table.projectId,
+      table.kind,
+      table.target,
+      table.fetchedAt,
+    ),
+    index("research_archive_view_idx").on(
+      table.projectId,
+      table.viewKey,
+      table.fetchedAt,
+    ),
+    index("research_archive_project_fetched_idx").on(
+      table.projectId,
+      table.fetchedAt,
+    ),
+    index("research_archive_fetched_idx").on(table.fetchedAt),
+  ],
+);

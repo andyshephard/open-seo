@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useArchiveAsOf } from "@/client/features/research-history/archiveAsOf";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 import type {
   BacklinksPageProps,
@@ -86,8 +87,9 @@ export function useBacklinksPageData({
   const { target, scope, tab, page, pageSize, sort, order, view } = searchState;
   const rowsMode = view === "all" ? "as_is" : "one_per_domain";
   const targetReady = Boolean(target);
-  const baseQueryKeyParts = [projectId, scope, target] as const;
-  const pageInputBase = { projectId, target, scope, page, pageSize };
+  const asOf = useArchiveAsOf();
+  const baseQueryKeyParts = [projectId, scope, target, asOf] as const;
+  const pageInputBase = { projectId, target, scope, page, pageSize, asOf };
   // Keep the current table on screen while paging, sorting or filtering the
   // same target. A new target shows the loading state instead. Each tab has
   // its own query, so switching tabs never shows another tab's rows.
@@ -105,7 +107,8 @@ export function useBacklinksPageData({
     queryKey: ["backlinksOverview", ...baseQueryKeyParts],
     enabled: targetReady,
     staleTime: BACKLINKS_QUERY_STALE_TIME_MS,
-    queryFn: () => getBacklinksOverview({ data: { projectId, target, scope } }),
+    queryFn: () =>
+      getBacklinksOverview({ data: { projectId, target, scope, asOf } }),
   });
 
   const rowsSort = toSort(

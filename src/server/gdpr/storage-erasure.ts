@@ -2,6 +2,7 @@ import { getGoogleAccessToken } from "@/server/features/google/googleOAuth";
 import type { SamChatAgent } from "@/server/features/sam/SamChatAgent";
 import { captureServerError } from "@/server/lib/posthog";
 import { deleteProjectAiObjects } from "@/server/features/ai-visibility/services/aiVisibilityStorage";
+import { deleteProjectArchiveObjects } from "@/server/features/research-history/services/researchArchive";
 import {
   DUB_REFERRED_ORG_KV_PREFIX,
   DUB_REFERRED_USER_KV_PREFIX,
@@ -229,8 +230,14 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
     payload.organizationIds,
   );
   let aiVisibilityObjects = 0;
+  let researchArchiveObjects = 0;
+  // Every project of the erased organizations, despite the field's name.
   for (const projectId of payload.aiVisibilityProjectIds) {
     aiVisibilityObjects += await deleteProjectAiObjects(env.R2, projectId);
+    researchArchiveObjects += await deleteProjectArchiveObjects(
+      env.R2,
+      projectId,
+    );
   }
 
   const oauth = await deleteOauthGrants(env.OAUTH_KV, payload.userId);
@@ -252,6 +259,7 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
     r2Objects: payload.r2Keys.length,
     promptCacheObjects,
     aiVisibilityObjects,
+    researchArchiveObjects,
     googleRevocations,
   };
 }

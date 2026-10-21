@@ -32,6 +32,10 @@ import { getBacklinksProfileTool } from "@/server/mcp/tools/get-backlinks-profil
 import { getDomainKeywordSuggestionsTool } from "@/server/mcp/tools/get-domain-keyword-suggestions";
 import { getDomainOverviewTool } from "@/server/mcp/tools/get-domain-overview";
 import { getResearchHistoryTool } from "@/server/mcp/tools/get-research-history";
+import {
+  getResearchArchiveEntryTool,
+  listResearchArchiveTool,
+} from "@/server/mcp/tools/research-archive-tools";
 import { addRankTrackingKeywordsTool } from "@/server/mcp/tools/add-rank-tracking-keywords";
 import { createRankTrackerTool } from "@/server/mcp/tools/create-rank-tracker";
 import { estimateRankTrackerCostTool } from "@/server/mcp/tools/estimate-rank-tracker-cost";
@@ -214,6 +218,8 @@ export function createOpenSeoMcpServer(authProps: McpProps) {
   register(saveKeywordsTool);
   register(getDomainOverviewTool);
   register(getResearchHistoryTool);
+  register(listResearchArchiveTool);
+  register(getResearchArchiveEntryTool);
   register(getDomainKeywordSuggestionsTool);
   register(getBacklinksOverviewTool);
   register(getBacklinksProfileTool);

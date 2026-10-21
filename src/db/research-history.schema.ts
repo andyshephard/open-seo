@@ -142,3 +142,55 @@ export const researchSnapshotSchedules = sqliteTable(
     index("research_snapshot_schedules_due_idx").on(table.nextCheckAt),
   ],
 );
+
+// Archive of full research results: every fresh (non-cached) Domain Overview,
+// Backlinks, Keyword Research and SERP lookup, and every rank check's SERP, so
+// a past view can be reopened exactly as it was fetched. The result itself is
+// an immutable JSON object in R2 at `r2_key`; this row indexes it.
+export const researchArchiveEntries = sqliteTable(
+  "research_archive_entries",
+  {
+    // Derived from (project, view key, fetched at), so a retried write is a
+    // no-op instead of a duplicate.
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    // e.g. "domain_keywords", "backlinks_referring_domains", "rank_check_serp".
+    kind: text("kind").notNull(),
+    // The looked-up domain, URL or keyword, as displayed.
+    target: text("target").notNull(),
+    // The live view's cache key: reopening a view "as of" a date looks up the
+    // same key it would read from the cache.
+    viewKey: text("view_key").notNull(),
+    // The request parameters (page, sort, filters, device...) for display.
+    // Opaque and immutable, so JSON is fine here.
+    params: text("params").notNull(),
+    locationCode: integer("location_code"),
+    languageCode: text("language_code"),
+    // "app" | "mcp" | "schedule"
+    origin: text("origin").notNull(),
+    fetchedAt: text("fetched_at").notNull(),
+    r2Key: text("r2_key").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+  },
+  (table) => [
+    index("research_archive_target_idx").on(
+      table.projectId,
+      table.kind,
+      table.target,
+      table.fetchedAt,
+    ),
+    index("research_archive_view_idx").on(
+      table.projectId,
+      table.viewKey,
+      table.fetchedAt,
+    ),
+    index("research_archive_project_fetched_idx").on(
+      table.projectId,
+      table.fetchedAt,
+    ),
+    // Retention sweeps the oldest entries across projects.
+    index("research_archive_fetched_idx").on(table.fetchedAt),
+  ],
+);

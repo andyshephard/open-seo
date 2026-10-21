@@ -183,6 +183,7 @@ describe("get_backlinks_profile MCP tool", () => {
         userEmail: "team@example.com",
         organizationId: "org_123",
         projectId: "project_123",
+        origin: "mcp",
       },
       { hideSpam: false },
     );

@@ -6,6 +6,41 @@ export type ResearchSnapshotInterval =
 
 export const RESEARCH_HISTORY_MONTHS = [3, 6, 12] as const;
 
+export const RESEARCH_ARCHIVE_KINDS = [
+  "domain_overview",
+  "domain_keywords",
+  "domain_pages",
+  "domain_keyword_suggestions",
+  "ranked_keywords",
+  "backlinks_overview",
+  "backlinks_rows",
+  "backlinks_referring_domains",
+  "backlinks_top_pages",
+  "keyword_research",
+  "keyword_metrics",
+  "serp_analysis",
+  "rank_check_serp",
+] as const;
+export type ResearchArchiveKind = (typeof RESEARCH_ARCHIVE_KINDS)[number];
+
+/**
+ * Reopens a live view as it was archived on this day (YYYY-MM-DD) instead of
+ * fetching it. Reads stored data only, so it never charges credits.
+ */
+export const archiveAsOfSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .optional();
+
+export const listResearchArchiveSchema = z.object({
+  projectId: z.string().min(1),
+  kinds: z.array(z.enum(RESEARCH_ARCHIVE_KINDS)).max(20).optional(),
+  target: z.string().trim().min(1).max(2048).optional(),
+  from: z.string().max(40).optional(),
+  before: z.string().max(40).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+
 export const researchHistoryInputSchema = z.object({
   projectId: z.string().min(1),
   // Defaults to the project's domain plus its saved competitors.
@@ -29,4 +64,28 @@ export const setResearchSnapshotScheduleSchema = z.object({
   // Null turns the schedule off.
   interval: z.enum(RESEARCH_SNAPSHOT_INTERVALS).nullable(),
   includeKeywords: z.boolean().default(true),
+});
+
+export const rankCheckSerpSchema = z.object({
+  keyword: z.string(),
+  device: z.enum(["desktop", "mobile"]),
+  position: z.number().nullable(),
+  url: z.string().nullable(),
+  items: z.array(
+    z.object({
+      type: z.string().nullable(),
+      rankGroup: z.number().nullable(),
+      rankAbsolute: z.number().nullable(),
+      domain: z.string().nullable(),
+      url: z.string().nullable(),
+      title: z.string().nullable(),
+    }),
+  ),
+});
+
+/** The view parameters archived with each rank-check SERP. */
+export const rankCheckSerpParamsSchema = z.object({
+  configId: z.string(),
+  trackingKeywordId: z.string(),
+  device: z.enum(["desktop", "mobile"]),
 });

@@ -3,6 +3,11 @@ import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import { createDataforseoClient } from "@/server/lib/dataforseo";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  archiveLookup,
+  archiveParams,
+  readArchivedView,
+} from "@/server/features/research-history/services/researchArchive";
 import { parseResearchTargetOrThrow } from "@/server/lib/domainUtils";
 import { buildRankedKeywordsScopeFilter } from "@/server/lib/dataforseo/researchScopeFilters";
 import type { ResearchScope } from "@/shared/researchScope";
@@ -54,6 +59,7 @@ export async function getKeywordsPage(
     sortOrder: DomainKeywordsSortOrder;
     filters: DomainKeywordsFilters;
     search?: string;
+    asOf?: string;
   },
   billingCustomer: BillingCustomerContext,
 ): Promise<DomainKeywordsPageResult> {
@@ -78,6 +84,11 @@ export async function getKeywordsPage(
     filters: input.filters,
     search: input.search,
   });
+
+  if (input.asOf)
+    return domainKeywordsPageResultSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
 
   const cachedRaw = await getCached(cacheKey);
   const cached = domainKeywordsPageResultSchema.safeParse(cachedRaw);
@@ -120,6 +131,16 @@ export async function getKeywordsPage(
     keywords,
     fetchedAt: new Date().toISOString(),
   };
+
+  await archiveLookup(billingCustomer, {
+    kind: "domain_keywords",
+    target: target.display,
+    viewKey: cacheKey,
+    params: archiveParams(input),
+    market: input,
+    fetchedAt: result.fetchedAt,
+    payload: result,
+  });
 
   // waitUntil, not void: workerd cancels unregistered pending I/O once the
   // response is sent, so a fire-and-forget put never persists the cache.

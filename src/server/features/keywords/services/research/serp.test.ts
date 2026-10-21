@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("cloudflare:workers", () => ({ waitUntil: vi.fn() }));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: vi.fn(),
+  archiveParams: vi.fn(() => ({})),
+  readArchivedView: vi.fn(),
+}));
 
 vi.mock("@/server/lib/r2-cache", () => ({
   buildCacheKey: mocks.buildCacheKey,

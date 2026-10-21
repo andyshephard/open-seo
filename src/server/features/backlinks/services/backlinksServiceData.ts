@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
-import { captureBacklinkSummary } from "@/server/features/research-history/services/researchHistoryCapture";
+import { readArchivedView } from "@/server/features/research-history/services/researchArchive";
+import { archiveBacklinks, recordBacklinkSummary } from "./backlinksHistory";
 import {
   createDataforseoClient,
   normalizeBacklinksTarget,
@@ -86,6 +87,10 @@ export async function profileBacklinksOverview(
   billingCustomer: BillingCustomerContext,
   creditFeature?: CreditFeature,
 ): Promise<{ overview: BacklinksOverviewResult }> {
+  if (input.asOf)
+    return backlinksOverviewCacheSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
   const cached = backlinksOverviewCacheSchema.safeParse(
     await cache.get(cacheKey),
   );
@@ -116,6 +121,13 @@ export async function profileBacklinksOverview(
       { overview },
       BACKLINKS_OVERVIEW_TTL_SECONDS,
     );
+    await archiveBacklinks(billingCustomer, {
+      kind: "backlinks_overview",
+      viewKey: cacheKey,
+      input,
+      fetchedAt: overview.fetchedAt,
+      payload: { overview },
+    });
     return { overview };
   }
 
@@ -151,34 +163,15 @@ export async function profileBacklinksOverview(
     BACKLINKS_OVERVIEW_TTL_SECONDS,
   );
   await recordBacklinkSummary(billingCustomer, overview);
+  await archiveBacklinks(billingCustomer, {
+    kind: "backlinks_overview",
+    viewKey: cacheKey,
+    input,
+    fetchedAt: overview.fetchedAt,
+    payload: { overview },
+  });
 
   return { overview };
-}
-
-// Only whole-domain profiles build history: page and subfolder lookups are not
-// comparable with the domain series.
-function recordBacklinkSummary(
-  billingCustomer: BillingCustomerContext,
-  overview: BacklinksOverviewResult,
-) {
-  if (overview.scope !== "domain" && overview.scope !== "subdomains")
-    return Promise.resolve();
-  const { summary } = overview;
-  return captureBacklinkSummary(billingCustomer, {
-    domain: overview.target,
-    includeSubdomains: overview.scope === "subdomains",
-    rank: summary.rank,
-    backlinks: summary.backlinks,
-    referringDomains: summary.referringDomains,
-    referringPages: summary.referringPages,
-    brokenBacklinks: summary.brokenBacklinks,
-    newBacklinks: summary.newBacklinks,
-    lostBacklinks: summary.lostBacklinks,
-    newReferringDomains: summary.newReferringDomains,
-    lostReferringDomains: summary.lostReferringDomains,
-    spamScore: summary.targetSpamScore,
-    fetchedAt: overview.fetchedAt,
-  });
 }
 
 export async function profileBacklinksRowsPage(
@@ -188,6 +181,10 @@ export async function profileBacklinksRowsPage(
   billingCustomer: BillingCustomerContext,
   spamOptions?: BacklinksSpamFilterOptions,
 ): Promise<BacklinksRowsPageResult> {
+  if (input.asOf)
+    return backlinksRowsPageResultSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
   const cached = backlinksRowsPageResultSchema.safeParse(
     await cache.get(cacheKey),
   );
@@ -226,6 +223,13 @@ export async function profileBacklinksRowsPage(
     totalCount: response.totalCount,
   });
   await cacheValue(cache, cacheKey, result, BACKLINKS_TAB_TTL_SECONDS);
+  await archiveBacklinks(billingCustomer, {
+    kind: "backlinks_rows",
+    viewKey: cacheKey,
+    input,
+    fetchedAt: result.fetchedAt,
+    payload: result,
+  });
 
   return result;
 }
@@ -237,6 +241,10 @@ export async function profileReferringDomainsPage(
   billingCustomer: BillingCustomerContext,
   spamOptions?: BacklinksSpamFilterOptions,
 ): Promise<ReferringDomainsPageResult> {
+  if (input.asOf)
+    return referringDomainsPageResultSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
   const cached = referringDomainsPageResultSchema.safeParse(
     await cache.get(cacheKey),
   );
@@ -274,6 +282,13 @@ export async function profileReferringDomainsPage(
     totalCount: response.totalCount,
   });
   await cacheValue(cache, cacheKey, result, BACKLINKS_TAB_TTL_SECONDS);
+  await archiveBacklinks(billingCustomer, {
+    kind: "backlinks_referring_domains",
+    viewKey: cacheKey,
+    input,
+    fetchedAt: result.fetchedAt,
+    payload: result,
+  });
 
   return result;
 }
@@ -284,6 +299,10 @@ export async function profileTopPagesPage(
   input: TopPagesPageServiceInput,
   billingCustomer: BillingCustomerContext,
 ): Promise<TopPagesPageResult> {
+  if (input.asOf)
+    return topPagesPageResultSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
   const cached = topPagesPageResultSchema.safeParse(await cache.get(cacheKey));
   if (cached.success) {
     return cached.data;
@@ -314,6 +333,13 @@ export async function profileTopPagesPage(
     totalCount: response.totalCount,
   });
   await cacheValue(cache, cacheKey, result, BACKLINKS_TAB_TTL_SECONDS);
+  await archiveBacklinks(billingCustomer, {
+    kind: "backlinks_top_pages",
+    viewKey: cacheKey,
+    input,
+    fetchedAt: result.fetchedAt,
+    payload: result,
+  });
 
   return result;
 }

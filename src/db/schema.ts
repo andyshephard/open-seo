@@ -136,4 +136,5 @@ export const {
   domainBacklinkSnapshots,
   keywordMetricSnapshots,
   researchSnapshotSchedules,
+  researchArchiveEntries,
 } = schema;

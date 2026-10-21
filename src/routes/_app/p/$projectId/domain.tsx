@@ -9,6 +9,7 @@ import {
   domainSearchSchema,
 } from "@/types/schemas/domain";
 import { getDomainRouteState } from "@/client/features/domain/domainRouteState";
+import { ArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { useProjectMarket } from "@/client/features/projects/useProjectMarket";
 
 const DEFAULT_DOMAIN_SEARCH = {
@@ -54,16 +55,26 @@ function DomainOverviewRoute() {
   const routeState = getDomainRouteState(search, projectMarket);
 
   return (
-    <DomainOverviewPage
+    <ArchiveView
       projectId={projectId}
-      onShowRecentSearches={() => {
-        void navigate({
-          search: () => ({}),
-          replace: true,
-        });
-      }}
-      navigate={navigate}
-      routeState={routeState}
-    />
+      kinds={["domain_overview", "domain_keywords", "domain_pages"]}
+      target={routeState.domain}
+      asOf={search.asOf}
+      onAsOfChange={(asOf) =>
+        void navigate({ search: (prev) => ({ ...prev, asOf }) })
+      }
+    >
+      <DomainOverviewPage
+        projectId={projectId}
+        onShowRecentSearches={() => {
+          void navigate({
+            search: () => ({}),
+            replace: true,
+          });
+        }}
+        navigate={navigate}
+        routeState={routeState}
+      />
+    </ArchiveView>
   );
 }

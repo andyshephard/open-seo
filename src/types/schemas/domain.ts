@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { archiveAsOfSchema } from "@/types/schemas/researchHistory";
 import { isValidDomainHost, researchScopeSchema } from "@/shared/researchScope";
 
 /**
@@ -43,6 +44,7 @@ export const booleanSearchParamSchema = z
   .transform((value) => value === true || value === "true");
 
 export const domainOverviewSchema = z.object({
+  asOf: archiveAsOfSchema,
   projectId: z.string().uuid(),
   domain: z.string().min(1, "Domain is required").max(2048),
   scope: researchScopeSchema.optional(),
@@ -59,6 +61,7 @@ const domainSortOrders = ["asc", "desc"] as const;
 const domainTabs = ["keywords", "pages"] as const;
 
 export const domainKeywordSuggestionsSchema = z.object({
+  asOf: archiveAsOfSchema,
   projectId: z.string().uuid(),
   domain: z.string().min(1, "Domain is required").max(2048),
   scope: researchScopeSchema.optional(),
@@ -104,6 +107,7 @@ const domainKeywordsFiltersSchema = z.object({
 export type DomainKeywordsFilters = z.infer<typeof domainKeywordsFiltersSchema>;
 
 export const domainKeywordsPageRequestSchema = z.object({
+  asOf: archiveAsOfSchema,
   projectId: z.string().uuid(),
   domain: z.string().min(1).max(2048),
   scope: researchScopeSchema.optional(),
@@ -126,6 +130,7 @@ export const domainKeywordsPageRequestSchema = z.object({
 const domainPagesSortModes = ["traffic", "keywords"] as const;
 
 export const domainPagesPageRequestSchema = z.object({
+  asOf: archiveAsOfSchema,
   projectId: z.string().uuid(),
   domain: z.string().min(1).max(2048),
   scope: researchScopeSchema.optional(),
@@ -169,6 +174,7 @@ export const searchTextParam = z
 const filterNumberParam = optionalSearchNumberParam;
 
 export const domainSearchSchema = z.object({
+  asOf: archiveAsOfSchema.catch(undefined),
   domain: z.string().optional(),
   scope: researchScopeSchema.optional().catch(undefined),
   /** Legacy param: pre-scope URLs encoded "Include subdomains" here. */

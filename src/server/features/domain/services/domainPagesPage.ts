@@ -4,6 +4,11 @@ import type { BillingCustomerContext } from "@/server/billing/subscription";
 import { createDataforseoClient } from "@/server/lib/dataforseo";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
 import {
+  archiveLookup,
+  archiveParams,
+  readArchivedView,
+} from "@/server/features/research-history/services/researchArchive";
+import {
   parseResearchTargetOrThrow,
   toRelativePath,
 } from "@/server/lib/domainUtils";
@@ -146,6 +151,7 @@ export async function getPagesPage(
     sortOrder: DomainPagesSortOrder;
     filters: DomainKeywordsFilters;
     search?: string;
+    asOf?: string;
   },
   billingCustomer: BillingCustomerContext,
 ): Promise<DomainPagesPageResult> {
@@ -170,6 +176,11 @@ export async function getPagesPage(
     filters: input.filters,
     search: input.search,
   });
+
+  if (input.asOf)
+    return domainPagesPageResultSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
 
   const cachedRaw = await getCached(cacheKey);
   const cached = domainPagesPageResultSchema.safeParse(cachedRaw);
@@ -212,6 +223,16 @@ export async function getPagesPage(
     pages,
     fetchedAt: new Date().toISOString(),
   };
+
+  await archiveLookup(billingCustomer, {
+    kind: "domain_pages",
+    target: target.display,
+    viewKey: cacheKey,
+    params: archiveParams(input),
+    market: input,
+    fetchedAt: result.fetchedAt,
+    payload: result,
+  });
 
   // waitUntil, not void: workerd cancels unregistered pending I/O once the
   // response is sent, so a fire-and-forget put never persists the cache.

@@ -1,4 +1,6 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { ArchiveView } from "@/client/features/research-history/archiveAsOf";
+
 import { KeywordResearchPage } from "@/client/features/keywords/page/KeywordResearchPage";
 import {
   isResultLimit,
@@ -38,18 +40,29 @@ function KeywordResearchPageRoute() {
     sort: sortField = "searchVolume",
     order: sortDir = "desc",
   } = search;
+  const navigate = useNavigate({ from: Route.fullPath });
   return (
-    <KeywordResearchPage
+    <ArchiveView
       projectId={projectId}
-      keywordInput={keywordInput}
-      locationCode={locationCode}
-      locationName={search.locName}
-      resultLimit={isResultLimit(resultLimit) ? resultLimit : 150}
-      keywordMode={normalizeKeywordMode(keywordMode)}
-      clickstream={search.cs ?? false}
-      groupKeywords={search.grp ?? false}
-      sortField={normalizeSortField(sortField)}
-      sortDir={normalizeSortDir(sortDir)}
-    />
+      kinds={["keyword_research", "serp_analysis"]}
+      target={keywordInput}
+      asOf={search.asOf}
+      onAsOfChange={(asOf) =>
+        void navigate({ search: (prev) => ({ ...prev, asOf }) })
+      }
+    >
+      <KeywordResearchPage
+        projectId={projectId}
+        keywordInput={keywordInput}
+        locationCode={locationCode}
+        locationName={search.locName}
+        resultLimit={isResultLimit(resultLimit) ? resultLimit : 150}
+        keywordMode={normalizeKeywordMode(keywordMode)}
+        clickstream={search.cs ?? false}
+        groupKeywords={search.grp ?? false}
+        sortField={normalizeSortField(sortField)}
+        sortDir={normalizeSortDir(sortDir)}
+      />
+    </ArchiveView>
   );
 }

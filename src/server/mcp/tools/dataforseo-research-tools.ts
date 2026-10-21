@@ -1,6 +1,12 @@
 /* eslint-disable max-lines */
 import { sort } from "remeda";
 import { z } from "zod";
+import { buildCacheKey } from "@/server/lib/r2-cache";
+import {
+  archiveLookup,
+  archiveParams,
+} from "@/server/features/research-history/services/researchArchive";
+import { captureKeywordMetrics } from "@/server/features/research-history/services/researchHistoryCapture";
 import {
   createDataforseoClient,
   fetchKeywordMetricsForList,
@@ -836,6 +842,22 @@ export const getRankedKeywordsTool = {
       itemTypes: args.resultTypes,
     });
 
+    await archiveLookup(context.billing, {
+      kind: "ranked_keywords",
+      target: target.display,
+      // No cache here; the key only groups identical requests in the archive.
+      viewKey: await buildCacheKey("mcp:ranked-keywords", {
+        ...archiveParams(args),
+        target: target.display,
+        scope: target.scope,
+        ...market,
+      }),
+      params: { ...archiveParams(args), scope: target.scope },
+      market,
+      fetchedAt: new Date().toISOString(),
+      payload: { keywords: keywords.items, totalCount: keywords.totalCount },
+    });
+
     const rankedRows = keywords.items.map(toRankedKeywordRow);
     const targetLabel = `${target.display} (scope: ${target.scope})`;
     const text =
@@ -1085,6 +1107,27 @@ export const getKeywordMetricsTool = {
       includeClickstreamData: args.includeClickstreamData ?? false,
       creditFeature: "keyword_research",
     });
+    await Promise.all([
+      captureKeywordMetrics(args.projectId, {
+        locationCode,
+        languageCode,
+        rows: metrics,
+      }),
+      archiveLookup(context.billing, {
+        kind: "keyword_metrics",
+        target: args.keywords.join(", "),
+        viewKey: await buildCacheKey("mcp:keyword-metrics", {
+          keywords: args.keywords,
+          locationCode,
+          languageCode,
+          includeClickstreamData: args.includeClickstreamData ?? false,
+        }),
+        params: archiveParams(args),
+        market: { locationCode, languageCode },
+        fetchedAt: new Date().toISOString(),
+        payload: metrics,
+      }),
+    ]);
     const rows = sortKeywordMetricRows(
       metrics.map(toMcpKeywordMetricRow),
       args.sortBy ?? "search_volume",

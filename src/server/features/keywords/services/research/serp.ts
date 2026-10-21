@@ -4,6 +4,11 @@ import {
   type SerpLiveItem,
 } from "@/server/lib/dataforseo";
 import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  archiveLookup,
+  archiveParams,
+  readArchivedView,
+} from "@/server/features/research-history/services/researchArchive";
 import type { SerpResultItem } from "@/types/keywords";
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
@@ -73,6 +78,7 @@ async function getSerpLiveAnalysis(
     languageCode: string;
     depth: number;
     locationName?: string;
+    asOf?: string;
   },
   billingCustomer: BillingCustomerContext,
 ): Promise<SerpAnalysisResult> {
@@ -95,6 +101,11 @@ async function getSerpLiveAnalysis(
   // a deeper crawl re-fetches the head too. A depth-100 snapshot therefore also
   // answers depth-20 requests, and a deeper request replaces the entry rather
   // than appending to it.
+  if (input.asOf)
+    return serpCacheSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
+
   const cachedRaw = await getCached(cacheKey);
   const cached = serpCacheSchema.safeParse(cachedRaw);
   if (cached.success && cached.data.depth >= depth) {
@@ -126,6 +137,16 @@ async function getSerpLiveAnalysis(
   if (items.length === 0 && cached.success && cached.data.items.length > 0) {
     return result;
   }
+
+  await archiveLookup(billingCustomer, {
+    kind: "serp_analysis",
+    target: keyword,
+    viewKey: cacheKey,
+    params: archiveParams(input),
+    market: input,
+    fetchedAt: new Date().toISOString(),
+    payload: result,
+  });
 
   // waitUntil, not void: workerd cancels unregistered pending I/O once the
   // response is sent, so a fire-and-forget put never persists the cache.

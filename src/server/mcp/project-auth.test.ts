@@ -62,6 +62,7 @@ describe("withMcpProjectAuth", () => {
           userEmail: "alice@example.com",
           organizationId: "org_123",
           projectId: "project_123",
+          origin: "mcp",
         },
         project: {
           id: "project_123",

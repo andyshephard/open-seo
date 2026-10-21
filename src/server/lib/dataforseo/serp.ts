@@ -129,6 +129,17 @@ export interface RankCheckResult {
   position: number | null;
   url: string | null;
   serpFeatures: string[];
+  /** The whole results page as checked, archived with the run. */
+  serpItems: RankCheckSerpItem[];
+}
+
+export interface RankCheckSerpItem {
+  type: string | null;
+  rankGroup: number | null;
+  rankAbsolute: number | null;
+  domain: string | null;
+  url: string | null;
+  title: string | null;
 }
 
 function buildRankCheckResult(
@@ -153,6 +164,14 @@ function buildRankCheckResult(
       : null,
     url: organicMatch?.url ?? null,
     serpFeatures: [...new Set(items.map((item) => item.type).filter(Boolean))],
+    serpItems: items.map((item) => ({
+      type: item.type ?? null,
+      rankGroup: item.rank_group ?? null,
+      rankAbsolute: item.rank_absolute ?? null,
+      domain: item.domain ?? null,
+      url: item.url ?? null,
+      title: item.title ?? null,
+    })),
   };
 }
 

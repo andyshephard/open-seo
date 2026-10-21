@@ -169,6 +169,7 @@ export function buildBillingCustomer(
     userEmail: auth.userEmail,
     organizationId: auth.organizationId,
     projectId,
+    origin: "mcp",
   };
 }
 

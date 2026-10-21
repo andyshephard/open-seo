@@ -208,6 +208,12 @@ describe("rank check task queue", () => {
         position: 3,
         url: "https://www.example.com/page",
         serpFeatures: ["organic"],
+        serpItems: [
+          expect.objectContaining({
+            domain: "www.example.com",
+            rankGroup: 3,
+          }),
+        ],
       },
     });
   });

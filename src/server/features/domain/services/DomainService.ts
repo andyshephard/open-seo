@@ -12,6 +12,10 @@ import { mapKeywordItem } from "@/server/features/domain/services/domainKeywordM
 import { getKeywordsPage } from "@/server/features/domain/services/domainKeywordsPage";
 import { getPagesPage } from "@/server/features/domain/services/domainPagesPage";
 import { captureDomainOverview } from "@/server/features/research-history/services/researchHistoryCapture";
+import {
+  archiveLookup,
+  readArchivedView,
+} from "@/server/features/research-history/services/researchArchive";
 
 // Lets a caller attribute spend to its own feature (e.g. the SAM agent). Applied
 // to the DataForSEO call, not the cache key, so cached results are shared
@@ -36,6 +40,17 @@ const domainOverviewResultSchema = z.object({
   fetchedAt: z.string(),
 });
 
+const suggestedKeywordsSchema = z.array(
+  z.object({
+    keyword: z.string(),
+    position: z.number().nullable(),
+    searchVolume: z.number().nullable(),
+    traffic: z.number().nullable(),
+    cpc: z.number().nullable(),
+    keywordDifficulty: z.number().nullable(),
+  }),
+);
+
 type DomainOverviewResult = z.infer<typeof domainOverviewResultSchema> & {
   /** Requested research scope, echoed for display. */
   scope: ResearchScope;
@@ -49,6 +64,7 @@ async function getOverview(
     scope?: ResearchScope;
     locationCode: number;
     languageCode: string;
+    asOf?: string;
   },
   billingCustomer: BillingCustomerContext,
   metering: MeteringOverrides = {},
@@ -66,6 +82,15 @@ async function getOverview(
     locationCode: input.locationCode,
     languageCode: input.languageCode,
   });
+
+  if (input.asOf)
+    return {
+      ...domainOverviewResultSchema.parse(
+        await readArchivedView(billingCustomer, cacheKey, input.asOf),
+      ),
+      scope: target.scope,
+      displayTarget: target.display,
+    };
 
   const cachedRaw = await getCached(cacheKey);
   const cached = domainOverviewResultSchema.safeParse(cachedRaw);
@@ -127,6 +152,15 @@ async function getOverview(
       ),
     );
     await recordOverview(billingCustomer, input, stored);
+    await archiveLookup(billingCustomer, {
+      kind: "domain_overview",
+      target: target.display,
+      viewKey: cacheKey,
+      params: {},
+      market: input,
+      fetchedAt: stored.fetchedAt,
+      payload: stored,
+    });
   }
 
   return { ...stored, scope: target.scope, displayTarget: target.display };
@@ -157,6 +191,7 @@ async function getSuggestedKeywords(
     languageCode: string;
     organizationId: string;
     projectId: string;
+    asOf?: string;
   },
   billingCustomer: BillingCustomerContext,
   metering: MeteringOverrides = {},
@@ -183,19 +218,13 @@ async function getSuggestedKeywords(
     languageCode: input.languageCode,
   });
 
+  if (input.asOf)
+    return suggestedKeywordsSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
+
   const cachedRaw = await getCached(cacheKey);
-  const cached = z
-    .array(
-      z.object({
-        keyword: z.string(),
-        position: z.number().nullable(),
-        searchVolume: z.number().nullable(),
-        traffic: z.number().nullable(),
-        cpc: z.number().nullable(),
-        keywordDifficulty: z.number().nullable(),
-      }),
-    )
-    .safeParse(cachedRaw);
+  const cached = suggestedKeywordsSchema.safeParse(cachedRaw);
   if (cached.success && cached.data.length > 0) {
     return cached.data;
   }
@@ -231,6 +260,15 @@ async function getSuggestedKeywords(
     }));
 
   if (keywords.length > 0) {
+    await archiveLookup(billingCustomer, {
+      kind: "domain_keyword_suggestions",
+      target: target.display,
+      viewKey: cacheKey,
+      params: { scope: target.scope },
+      market: input,
+      fetchedAt: new Date().toISOString(),
+      payload: keywords,
+    });
     waitUntil(
       setCached(cacheKey, keywords, DOMAIN_OVERVIEW_TTL_SECONDS).catch(
         (error) => {

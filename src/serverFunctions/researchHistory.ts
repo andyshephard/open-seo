@@ -1,13 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { ResearchHistoryRepository } from "@/server/features/research-history/repositories/ResearchHistoryRepository";
 import { getResearchHistory as loadResearchHistory } from "@/server/features/research-history/services/researchHistory";
 import {
   captureProjectSnapshot,
   setSnapshotSchedule,
 } from "@/server/features/research-history/services/researchSnapshots";
+import {
+  getArchiveEntry,
+  listArchive,
+} from "@/server/features/research-history/services/researchArchive";
+import { AppError } from "@/server/lib/errors";
 import { requireProjectContext } from "@/serverFunctions/middleware";
 import {
+  listResearchArchiveSchema,
   projectIdInputSchema,
+  rankCheckSerpSchema,
   researchHistoryInputSchema,
   setResearchSnapshotScheduleSchema,
 } from "@/types/schemas/researchHistory";
@@ -63,3 +71,24 @@ export const captureResearchSnapshotNow = createServerFn({ method: "POST" })
       },
     ),
   );
+
+export const listResearchArchive = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(listResearchArchiveSchema)
+  .handler(async ({ data, context }) =>
+    listArchive({ ...data, projectId: context.projectId }),
+  );
+
+/** One archived rank-check results page, as the check saw it. */
+export const getRankCheckSerp = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(projectIdInputSchema.extend({ id: z.string().min(1).max(64) }))
+  .handler(async ({ data, context }) => {
+    const entry = await getArchiveEntry(context.projectId, data.id);
+    if (entry.kind !== "rank_check_serp")
+      throw new AppError("NOT_FOUND", "Archived SERP not found.");
+    return {
+      fetchedAt: entry.fetchedAt,
+      ...rankCheckSerpSchema.parse(entry.result),
+    };
+  });
