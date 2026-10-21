@@ -10,7 +10,15 @@ import {
 } from "@/server/lib/dataforseo";
 import type { LlmCrossAggregatedItem } from "@/server/lib/dataforseoLlmSchemas";
 import { AppError } from "@/server/lib/errors";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  buildCacheKey,
+  getCachedEntry,
+  RESEARCH_FRESHNESS_SECONDS,
+  setCached,
+  type CacheFreshness,
+} from "@/server/lib/r2-cache";
+import { archiveLookup } from "@/server/features/research-history/services/researchArchive";
+import { z } from "zod";
 import {
   resolveCompetitorGroups,
   type CompetitorGroup,
@@ -39,8 +47,43 @@ import {
  * the UI can render directly. Stateless — no DB writes, R2 caching only.
  */
 
-/** Brand lookup data refreshes daily; underlying API is updated monthly. */
-const BRAND_LOOKUP_TTL_SECONDS = 24 * 60 * 60;
+/** The underlying LLM mentions data updates about monthly. */
+const BRAND_LOOKUP_TTL_SECONDS = RESEARCH_FRESHNESS_SECONDS.aiSearch;
+
+/**
+ * Caches one paid part of a lookup on its own key, so a lookup that changes
+ * only competitors or the market re-buys only the parts that depend on them.
+ * Parts that came back incomplete are not stored.
+ */
+async function cachedPart<T>(
+  billingCustomer: BillingCustomerContext,
+  part: {
+    freshness: CacheFreshness;
+    prefix: string;
+    params: Record<string, unknown>;
+    isComplete: (value: T) => boolean;
+  },
+  fetch: () => Promise<T>,
+): Promise<T> {
+  const { freshness, prefix, params, isComplete } = part;
+  const key = await buildCacheKey(prefix, {
+    organizationId: billingCustomer.organizationId,
+    ...params,
+  });
+  const entry = await getCachedEntry(key, freshness);
+  if (entry) {
+    const parsed = z.custom<T>().safeParse(entry.value);
+    if (parsed.success) return parsed.data;
+  }
+  const value = await fetch();
+  if (isComplete(value))
+    waitUntil(
+      setCached(key, value, BRAND_LOOKUP_TTL_SECONDS).catch((err) => {
+        console.error(`${prefix}.cache-write failed:`, err);
+      }),
+    );
+  return value;
+}
 
 const PLATFORMS: LlmPlatform[] = ["chat_gpt", "google"];
 
@@ -69,7 +112,6 @@ export async function getBrandLookup(
   // rather than maintaining parallel legacy-shape parsing.
   const cacheKey = await buildCacheKey("ai-search:brand-lookup", {
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     targetType: detected.type,
     // Values are lowercased for DataForSEO's matching semantics. Competitors
     // are canonical detected values too, so equivalent casing/order shares one
@@ -93,8 +135,23 @@ export async function getBrandLookup(
         : "",
   });
 
-  const cached = brandLookupResultSchema.safeParse(await getCached(cacheKey));
-  if (cached.success) {
+  const archive = (result: BrandLookupResult, fetchedAt: string) =>
+    archiveLookup(billingCustomer, {
+      kind: "brand_lookup",
+      target: researchTarget?.display ?? detected.value,
+      viewKey: cacheKey,
+      params: {
+        competitors: input.competitors,
+        ...(researchTarget ? { scope: researchTarget.scope } : {}),
+      },
+      market: input,
+      fetchedAt,
+      payload: result,
+    });
+  const cachedEntry = await getCachedEntry(cacheKey, input);
+  const cached = brandLookupResultSchema.safeParse(cachedEntry?.value);
+  if (cachedEntry && cached.success) {
+    await archive(cached.data, cachedEntry.storedAt);
     return {
       ...cached.data,
       query: input.query,
@@ -112,12 +169,37 @@ export async function getBrandLookup(
   for (const platform of PLATFORMS) {
     settled.push(
       await settle(() =>
-        fetchPlatformData(
-          platform,
-          detected,
-          includeSubdomains,
-          input,
-          dataforseo,
+        // Platform data doesn't depend on competitors, and ChatGPT is always
+        // read in its fixed market, so each platform is cached on its own.
+        cachedPart(
+          billingCustomer,
+          {
+            freshness: input,
+            prefix: "ai-search:brand-platform",
+            isComplete: (bundle: PlatformBundle) => bundle.complete,
+            params: {
+              platform,
+              targetType: detected.type,
+              targetValue: detected.value.toLowerCase(),
+              includeSubdomains,
+              locationCode:
+                platform === "chat_gpt"
+                  ? CHATGPT_LOCATION_CODE
+                  : input.locationCode,
+              languageCode:
+                platform === "chat_gpt"
+                  ? CHATGPT_LANGUAGE_CODE
+                  : input.languageCode,
+            },
+          },
+          () =>
+            fetchPlatformData(
+              platform,
+              detected,
+              includeSubdomains,
+              input,
+              dataforseo,
+            ),
         ),
       ),
     );
@@ -179,6 +261,7 @@ export async function getBrandLookup(
         console.error("ai-search.brand-lookup.cache-write failed:", err);
       }),
     );
+    await archive(result, new Date().toISOString());
   }
 
   return result;

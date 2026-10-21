@@ -33,6 +33,12 @@ const mocks = vi.hoisted(() => ({
   getOrganicOverview: vi.fn(),
 }));
 
+vi.mock("@/server/features/research-history/services/researchArchive", () =>
+  import("./research-storage-test-mocks").then((m) => m.archiveModule),
+);
+vi.mock("@/server/features/research-history/services/cachedLookup", () =>
+  import("./research-storage-test-mocks").then((m) => m.cachedLookupModule),
+);
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 vi.mock("@/server/lib/dataforseo", async () => {
   // Real target normalizer (pure, leaf module) so scope resolution in the

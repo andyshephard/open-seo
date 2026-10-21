@@ -106,6 +106,35 @@ async function upsertKeywordMetric(params: {
     });
 }
 
+/** Stored metrics fetched at or after `since` for these exact keywords. */
+async function listStoredKeywordMetrics(params: {
+  projectId: string;
+  keywords: string[];
+  locationCode: number;
+  languageCode: string;
+  since: string;
+}) {
+  const rows: KeywordMetricRecord[] = [];
+  // Bounded IN lists keep each statement under D1's parameter cap.
+  for (let i = 0; i < params.keywords.length; i += 50) {
+    rows.push(
+      ...(await db
+        .select()
+        .from(keywordMetrics)
+        .where(
+          and(
+            eq(keywordMetrics.projectId, params.projectId),
+            inArray(keywordMetrics.keyword, params.keywords.slice(i, i + 50)),
+            eq(keywordMetrics.locationCode, params.locationCode),
+            eq(keywordMetrics.languageCode, params.languageCode),
+            gte(keywordMetrics.fetchedAt, params.since),
+          ),
+        )),
+    );
+  }
+  return rows;
+}
+
 async function countSavedKeywords(projectId: string) {
   const [result] = await db
     .select({ value: count() })
@@ -363,6 +392,7 @@ async function removeSavedKeywords(
 
 export const KeywordResearchRepository = {
   upsertKeywordMetric,
+  listStoredKeywordMetrics,
   countSavedKeywords,
   saveKeywordsToProject,
   listSavedKeywordsByProject,

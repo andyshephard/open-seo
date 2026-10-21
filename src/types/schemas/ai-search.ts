@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { researchFreshnessShape } from "@/types/schemas/researchHistory";
 import { WEB_SEARCH_COUNTRY_CODES } from "@/shared/prompt-search-countries";
 import { researchScopeSchema } from "@/shared/researchScope";
 
@@ -37,6 +38,7 @@ export function parseCompetitorList(raw: string): string[] {
 
 export const brandLookupInputSchema = z.object({
   projectId: z.string().min(1),
+  ...researchFreshnessShape,
   query: z.string().trim().min(1).max(BRAND_LOOKUP_MAX_INPUT_LENGTH),
   // Optional competitor brands/domains to compare Share of Voice against.
   // cross_aggregated_metrics caps groups at 10 (target + 9); we cap at 5.

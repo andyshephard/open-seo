@@ -25,6 +25,12 @@ const mocks = vi.hoisted(() => ({
   setCached: vi.fn(),
 }));
 
+vi.mock("@/server/features/research-history/services/researchArchive", () =>
+  import("./research-storage-test-mocks").then((m) => m.archiveModule),
+);
+vi.mock("@/server/features/research-history/services/cachedLookup", () =>
+  import("./research-storage-test-mocks").then((m) => m.cachedLookupModule),
+);
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 
 vi.mock("@/server/lib/dataforseo", () => ({
@@ -41,6 +47,7 @@ vi.mock("@/server/lib/r2-cache", () => ({
     `${prefix}:${JSON.stringify(params)}`,
   getCached: mocks.getCached,
   setCached: mocks.setCached,
+  RESEARCH_FRESHNESS_SECONDS: { local: 604800, serp: 86400 },
 }));
 
 vi.mock("@/server/features/projects/services/ProjectService", () => ({

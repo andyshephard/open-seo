@@ -10,6 +10,9 @@ import { computeNextCheckAt } from "@/shared/rank-tracking";
 // of a tick is always admitted so a large tracker never starves. Trackers past
 // the budget stay due for the next tick, oldest first.
 const SCHEDULED_ANSWER_BUDGET = 1000;
+// A check that finished this recently already answered the same prompts, so
+// the scheduled one is skipped instead of buying the answers again.
+const RECENT_RUN_SKIP_MS = 24 * 60 * 60_000;
 const TICK_DEADLINE_MS = 2 * 60_000;
 
 /** Cron body: start a check for every due tracker. */
@@ -50,6 +53,19 @@ export async function runScheduledAiVisibility() {
         },
       });
       if (!claimed) continue;
+      const lastCompletedAt = await repo.getLatestCompletedAt(
+        tracker.projectId,
+      );
+      if (
+        lastCompletedAt &&
+        Date.now() - Date.parse(lastCompletedAt) < RECENT_RUN_SKIP_MS
+      ) {
+        await repo.updateTracker(tracker.id, {
+          lastSkipReason:
+            "Skipped: a check finished less than 24 hours earlier.",
+        });
+        continue;
+      }
       const first = !(await repo.getLatestScheduledRun(tracker.projectId));
       await startRun(config, first ? "baseline" : "scheduled", {
         organizationId,

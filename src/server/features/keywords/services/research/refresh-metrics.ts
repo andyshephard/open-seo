@@ -1,20 +1,16 @@
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
-import { normalizeIntent } from "@/server/features/keywords/services/research/helpers";
-import { captureKeywordMetrics } from "@/server/features/research-history/services/researchHistoryCapture";
-import {
-  createDataforseoClient,
-  fetchKeywordMetricsForList,
-} from "@/server/lib/dataforseo";
+import { getKeywordMetrics } from "@/server/features/keywords/services/keywordMetricsStore";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
+import type { CacheFreshness } from "@/server/lib/r2-cache";
 import type { RefreshSavedKeywordMetricsInput } from "@/types/schemas/keywords";
 
-// Cap concurrent D1 upserts per group. A project can accumulate thousands of
-// saved keywords in one location/language, and fanning out one promise each
-// would flood D1/Worker resources; write in bounded chunks instead.
-const REFRESH_UPSERT_BATCH_SIZE = 100;
-
+/**
+ * Brings saved keyword metrics up to date. Keywords whose stored metrics are
+ * still inside the freshness window keep them for free (volumes update about
+ * monthly); `refresh` buys every keyword again.
+ */
 export async function refreshSavedKeywordMetrics(
-  input: RefreshSavedKeywordMetricsInput,
+  input: RefreshSavedKeywordMetricsInput & CacheFreshness,
   billingCustomer: BillingCustomerContext,
 ): Promise<{ updated: number }> {
   const { rows } = await KeywordResearchRepository.listSavedKeywordsByProject({
@@ -22,9 +18,6 @@ export async function refreshSavedKeywordMetrics(
   });
 
   if (rows.length === 0) return { updated: 0 };
-
-  const client = createDataforseoClient(billingCustomer);
-  let updated = 0;
 
   // Group by (locationCode, languageCode) so each provider call is homogeneous.
   const groups = new Map<string, typeof rows>();
@@ -35,49 +28,22 @@ export async function refreshSavedKeywordMetrics(
     groups.set(key, group);
   }
 
+  let updated = 0;
   for (const groupRows of groups.values()) {
     const { locationCode, languageCode } = groupRows[0].row;
-    const metrics = await fetchKeywordMetricsForList(client, {
-      keywords: groupRows.map((r) => r.row.keyword),
-      locationCode,
-      languageCode,
-      creditFeature: "keyword_research",
-    });
-    const byKeyword = new Map(
-      metrics.map((metric) => [metric.keyword.toLowerCase(), metric]),
+    const metrics = await getKeywordMetrics(
+      {
+        projectId: input.projectId,
+        keywords: groupRows.map((r) => r.row.keyword),
+        locationCode,
+        languageCode,
+        creditFeature: "keyword_research",
+        refresh: input.refresh,
+        maxAgeDays: input.maxAgeDays,
+      },
+      billingCustomer,
     );
-    await captureKeywordMetrics(input.projectId, {
-      locationCode,
-      languageCode,
-      rows: groupRows.flatMap((r) => {
-        const metric = byKeyword.get(r.row.keyword.toLowerCase());
-        return metric ? [{ ...metric, keyword: r.row.keyword }] : [];
-      }),
-    });
-
-    for (let i = 0; i < groupRows.length; i += REFRESH_UPSERT_BATCH_SIZE) {
-      const chunk = groupRows.slice(i, i + REFRESH_UPSERT_BATCH_SIZE);
-      await Promise.all(
-        chunk.map((r) => {
-          const metric = byKeyword.get(r.row.keyword.toLowerCase());
-          if (!metric) return Promise.resolve();
-          return KeywordResearchRepository.upsertKeywordMetric({
-            projectId: input.projectId,
-            keyword: r.row.keyword,
-            locationCode,
-            languageCode,
-            searchVolume: metric.searchVolume,
-            cpc: metric.cpc,
-            competition: metric.competition,
-            keywordDifficulty: metric.keywordDifficulty,
-            intent: normalizeIntent(metric.intent),
-            monthlySearchesJson: JSON.stringify(metric.monthlySearches),
-          });
-        }),
-      );
-    }
-
-    updated += byKeyword.size;
+    updated += metrics.length;
   }
 
   return { updated };

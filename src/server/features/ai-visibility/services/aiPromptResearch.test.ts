@@ -28,9 +28,21 @@ vi.mock("@/server/lib/dataforseo", () => ({
 }));
 vi.mock("@/server/lib/r2-cache", () => ({
   buildCacheKey: async () => "key",
-  getCached,
+  getCachedEntry: async () => {
+    const value: unknown = await getCached();
+    return value == null
+      ? null
+      : { value, storedAt: "2026-10-01T00:00:00.000Z" };
+  },
   setCached: async () => undefined,
+  RESEARCH_FRESHNESS_SECONDS: { aiSearch: 604800 },
 }));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: async () => false,
+  archiveParams: () => ({}),
+  readArchivedView: async () => null,
+}));
+
 vi.mock("./aiVisibilityState", () => ({ getTracker }));
 vi.mock("@/server/features/keywords/services/research/serpSnapshot", () => ({
   getSerpSnapshot: async (input: unknown) => {

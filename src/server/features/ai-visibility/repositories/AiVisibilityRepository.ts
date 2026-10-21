@@ -1,4 +1,14 @@
-import { and, asc, desc, eq, inArray, isNull, lte, ne } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+} from "drizzle-orm";
 import { db } from "@/db";
 import { runBatch } from "@/db/runBatch";
 import {
@@ -291,6 +301,22 @@ export const AiVisibilityRepository = {
         .orderBy(desc(aiRuns.createdAt), desc(aiRuns.id))
         .limit(1)
     )[0] ?? null,
+  /** When the project's newest successful run of any trigger finished. */
+  getLatestCompletedAt: async (projectId: string) =>
+    (
+      await db
+        .select({ completedAt: aiRuns.completedAt })
+        .from(aiRuns)
+        .where(
+          and(
+            eq(aiRuns.projectId, projectId),
+            inArray(aiRuns.status, ["completed", "partial"]),
+            isNotNull(aiRuns.completedAt),
+          ),
+        )
+        .orderBy(desc(aiRuns.completedAt))
+        .limit(1)
+    )[0]?.completedAt ?? null,
   updateRun: (id: string, values: Partial<RunRow>) =>
     db.update(aiRuns).set(values).where(eq(aiRuns.id, id)),
   getObservations,

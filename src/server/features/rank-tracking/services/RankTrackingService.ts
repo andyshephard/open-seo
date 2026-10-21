@@ -3,10 +3,7 @@ import {
   customerHasPaidPlan,
   type BillingCustomerContext,
 } from "@/server/billing/subscription";
-import {
-  createDataforseoClient,
-  fetchKeywordMetricsForList,
-} from "@/server/lib/dataforseo";
+import { getKeywordMetrics } from "@/server/features/keywords/services/keywordMetricsStore";
 import { RankTrackingRepository } from "@/server/features/rank-tracking/repositories/RankTrackingRepository";
 import { assertSerpLocationNameAccepted } from "@/server/lib/dataforseo/serp-location-validate";
 import { AppError } from "@/server/lib/errors";
@@ -364,25 +361,28 @@ async function refreshKeywordMetrics(
   const keywords = await RankTrackingRepository.getKeywordsForConfig(configId);
   if (keywords.length === 0) return { updated: 0 };
 
-  const client = createDataforseoClient(billingCustomer);
-  const metrics = await fetchKeywordMetricsForList(client, {
-    // The keyword-data APIs are case-insensitive and echo keywords back
-    // lowercased, so ask in lowercase. A match-case keyword can sit next to
-    // its lowercase twin; both then map to the same metrics row and the
-    // request carries no duplicates.
-    keywords: [...new Set(keywords.map((kw) => kw.keyword.toLowerCase()))],
-    locationCode: config.locationCode,
-    // Trackers can pair any SERP language with any country; the keyword-data
-    // APIs only serve the country's own languages.
-    languageCode: resolveKeywordDataLanguage(
-      config.locationCode,
-      config.languageCode,
-    ),
-    // Local configs get volume/CPC scoped to the tracked city; national
-    // numbers can overstate local demand by orders of magnitude.
-    locationName: config.locationName ?? undefined,
-    creditFeature: "rank_tracking",
-  });
+  // Shared with keyword research: national metrics the project already holds
+  // are reused, and only missing or stale keywords are bought.
+  const metrics = await getKeywordMetrics(
+    {
+      projectId,
+      // The keyword-data APIs are case-insensitive and echo keywords back
+      // lowercased; a match-case keyword and its lowercase twin share one row.
+      keywords: keywords.map((kw) => kw.keyword),
+      locationCode: config.locationCode,
+      // Trackers can pair any SERP language with any country; the keyword-data
+      // APIs only serve the country's own languages.
+      languageCode: resolveKeywordDataLanguage(
+        config.locationCode,
+        config.languageCode,
+      ),
+      // Local configs get volume/CPC scoped to the tracked city; national
+      // numbers can overstate local demand by orders of magnitude.
+      locationName: config.locationName ?? undefined,
+      creditFeature: "rank_tracking",
+    },
+    billingCustomer,
+  );
   const byKeyword = new Map(
     metrics.map((metric) => [metric.keyword.toLowerCase(), metric]),
   );

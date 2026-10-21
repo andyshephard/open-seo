@@ -8,9 +8,10 @@ import { assertPaidAiSearchPlan } from "./access";
 import {
   AI_SEARCH_PROMPT_CACHE_NAMESPACE,
   buildCacheKey,
-  getCached,
   setCached,
+  getCachedEntry,
 } from "@/server/lib/r2-cache";
+import { archiveLookup } from "@/server/features/research-history/services/researchArchive";
 import {
   formatCountryLabel,
   formatModelLabel,
@@ -125,7 +126,6 @@ async function runModel(
   const modelName = await resolveLatestLlmModelName(args.model);
   const cacheKey = await buildCacheKey(AI_SEARCH_PROMPT_CACHE_NAMESPACE, {
     organizationId: args.billingCustomer.organizationId,
-    projectId: args.input.projectId,
     model: args.model,
     modelName,
     // Collapse only whitespace differences. Casing is deliberately preserved:
@@ -138,10 +138,24 @@ async function runModel(
     systemPromptV: 7,
   });
 
-  const cached = promptExplorerModelResultSchema.safeParse(
-    await getCached(cacheKey),
-  );
-  if (cached.success && cached.data.status === "success") {
+  const archive = (result: unknown, fetchedAt: string) =>
+    archiveLookup(args.billingCustomer, {
+      kind: "prompt_explorer",
+      target: args.input.prompt.slice(0, 500),
+      viewKey: cacheKey,
+      params: {
+        model: args.model,
+        modelName,
+        webSearch: args.input.webSearch,
+        ...(country ? { country } : {}),
+      },
+      fetchedAt,
+      payload: result,
+    });
+  const cachedEntry = await getCachedEntry(cacheKey);
+  const cached = promptExplorerModelResultSchema.safeParse(cachedEntry?.value);
+  if (cachedEntry && cached.success && cached.data.status === "success") {
+    await archive(cached.data, cachedEntry.storedAt);
     // highlightBrand is not part of the cache key — re-apply it so the same
     // cached response can power different brand highlights for free.
     return reapplyHighlightBrand(cached.data, args.highlightBrand);
@@ -177,6 +191,8 @@ async function runModel(
       console.error("ai-search.prompt-response.cache-write failed:", err);
     }),
   );
+
+  await archive(shaped, new Date().toISOString());
 
   return reapplyHighlightBrand(shaped, args.highlightBrand);
 }

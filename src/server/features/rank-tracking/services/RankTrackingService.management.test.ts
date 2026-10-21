@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   customerHasPaidPlan: vi.fn(),
   beginRankCheckRun: vi.fn(),
   createDataforseoClient: vi.fn(),
-  fetchKeywordMetricsForList: vi.fn(),
+  getKeywordMetrics: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({ env: { RANK_CHECK_WORKFLOW: {} } }));
@@ -31,7 +31,9 @@ vi.mock("@/server/features/rank-tracking/services/rankCheckRunGuards", () => ({
 }));
 vi.mock("@/server/lib/dataforseo", () => ({
   createDataforseoClient: mocks.createDataforseoClient,
-  fetchKeywordMetricsForList: mocks.fetchKeywordMetricsForList,
+}));
+vi.mock("@/server/features/keywords/services/keywordMetricsStore", () => ({
+  getKeywordMetrics: mocks.getKeywordMetrics,
 }));
 
 const config = {
@@ -291,18 +293,17 @@ describe("RankTrackingService management invariants", () => {
       ),
     ).rejects.toMatchObject({ code: "PAYMENT_REQUIRED" });
     expect(mocks.createDataforseoClient).not.toHaveBeenCalled();
-    expect(mocks.fetchKeywordMetricsForList).not.toHaveBeenCalled();
+    expect(mocks.getKeywordMetrics).not.toHaveBeenCalled();
   });
 
   it("matches metrics back to a cased keyword and its lowercase twin", async () => {
     mocks.isHostedServerAuthMode.mockResolvedValue(false);
-    mocks.createDataforseoClient.mockReturnValue({});
     mocks.getKeywordsForConfig.mockResolvedValue([
       { id: "kw_1", keyword: "Nodex" },
       { id: "kw_2", keyword: "nodex" },
     ]);
     // DataForSEO echoes keywords back lowercased.
-    mocks.fetchKeywordMetricsForList.mockResolvedValue([
+    mocks.getKeywordMetrics.mockResolvedValue([
       { keyword: "nodex", searchVolume: 90, keywordDifficulty: 12, cpc: 0.5 },
     ]);
 
@@ -313,10 +314,6 @@ describe("RankTrackingService management invariants", () => {
         billingCustomer,
       ),
     ).resolves.toEqual({ updated: 2 });
-    expect(mocks.fetchKeywordMetricsForList).toHaveBeenCalledWith(
-      {},
-      expect.objectContaining({ keywords: ["nodex"] }),
-    );
     expect(mocks.updateKeywordMetrics).toHaveBeenCalledWith([
       expect.objectContaining({ id: "kw_1", searchVolume: 90 }),
       expect.objectContaining({ id: "kw_2", searchVolume: 90 }),

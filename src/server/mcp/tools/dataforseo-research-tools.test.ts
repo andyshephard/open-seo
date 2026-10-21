@@ -9,6 +9,24 @@ const mocks = vi.hoisted(() => ({
   getProjectForOrganization: vi.fn(),
 }));
 
+vi.mock("@/server/features/research-history/services/researchArchive", () =>
+  import("./research-storage-test-mocks").then((m) => m.archiveModule),
+);
+vi.mock("@/server/features/research-history/services/cachedLookup", () =>
+  import("./research-storage-test-mocks").then((m) => m.cachedLookupModule),
+);
+vi.mock(
+  "@/server/features/keywords/repositories/KeywordResearchRepository",
+  () =>
+    import("./research-storage-test-mocks").then(
+      (m) => m.keywordRepositoryModule,
+    ),
+);
+vi.mock(
+  "@/server/features/research-history/services/researchHistoryCapture",
+  () =>
+    import("./research-storage-test-mocks").then((m) => m.historyCaptureModule),
+);
 vi.mock("cloudflare:workers", () => ({
   env: {},
 }));

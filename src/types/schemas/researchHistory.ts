@@ -20,6 +20,17 @@ export const RESEARCH_ARCHIVE_KINDS = [
   "keyword_metrics",
   "serp_analysis",
   "rank_check_serp",
+  "serp_competitors",
+  "local_businesses",
+  "local_serp",
+  "local_rank_grid",
+  "business_questions",
+  "business_profile",
+  "business_reviews",
+  "business_updates",
+  "brand_lookup",
+  "prompt_research",
+  "prompt_explorer",
 ] as const;
 export type ResearchArchiveKind = (typeof RESEARCH_ARCHIVE_KINDS)[number];
 

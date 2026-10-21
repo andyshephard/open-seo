@@ -16,7 +16,9 @@ const { dataforseoClientMock, cacheMock } = vi.hoisted(() => ({
       JSON.stringify(params),
     ),
     getCached: vi.fn(),
-    setCached: vi.fn(async () => undefined),
+    setCached: vi.fn(
+      async (_key: string, _value: unknown, _ttl: number) => undefined,
+    ),
   },
 }));
 
@@ -42,7 +44,21 @@ vi.mock("@/server/lib/dataforseo", () => {
   };
 });
 
-vi.mock("@/server/lib/r2-cache", () => cacheMock);
+vi.mock("@/server/lib/r2-cache", () => ({
+  ...cacheMock,
+  RESEARCH_FRESHNESS_SECONDS: { aiSearch: 604800 },
+  getCachedEntry: async (key: string) => {
+    const value: unknown = await cacheMock.getCached(key);
+    return value == null
+      ? null
+      : { value, storedAt: "2026-10-01T00:00:00.000Z" };
+  },
+}));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: async () => false,
+  archiveParams: () => ({}),
+  readArchivedView: async () => null,
+}));
 
 import { getBrandLookup } from "./brandLookup";
 import { shapeResult } from "./brandLookupShaping";
@@ -109,13 +125,20 @@ describe("getBrandLookup", () => {
       new Error("top pages failed"),
     );
 
+    // Complete platform parts are cached on their own keys; only writes of
+    // the whole lookup (keyed with its competitors) are counted here.
+    const lookupWrites = () =>
+      cacheMock.setCached.mock.calls.filter(([key]) =>
+        String(key).includes('"competitors"'),
+      );
+
     const partial = await getBrandLookup(input, billingCustomer);
     expect(partial.hasData).toBe(true);
-    expect(cacheMock.setCached).not.toHaveBeenCalled();
+    expect(lookupWrites()).toHaveLength(0);
 
     // Positive control: the same lookup with every call succeeding is cached.
     await getBrandLookup(input, billingCustomer);
-    expect(cacheMock.setCached).toHaveBeenCalledTimes(1);
+    expect(lookupWrites()).toHaveLength(1);
     consoleError.mockRestore();
   });
 

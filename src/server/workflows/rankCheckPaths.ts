@@ -5,7 +5,6 @@ import {
   MAX_TASKS_PER_POST,
 } from "@/server/lib/dataforseo";
 import type {
-  createDataforseoClient,
   PostedRankCheckTask,
   RankCheckResult,
   RankCheckTaskInput,
@@ -14,91 +13,19 @@ import { AppError } from "@/server/lib/errors";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { KEYWORDS_PER_BATCH } from "@/shared/rank-tracking";
 import { pgStep } from "@/server/workflows/pgStep";
-import type { BillingCustomerContext } from "@/server/billing/subscription";
-import { archiveLookup } from "@/server/features/research-history/services/researchArchive";
-
-// Archive writes per round run in small parallel groups: one R2 put and one
-// row each, for every keyword/device result.
-const ARCHIVE_CONCURRENCY = 10;
-
-/** Archives each checked results page; failures are logged by archiveLookup. */
-async function archiveSerps(
-  ctx: CheckContext,
-  results: RankCheckResultWithDevice[],
-) {
-  const fetchedAt = new Date().toISOString();
-  for (let i = 0; i < results.length; i += ARCHIVE_CONCURRENCY) {
-    await Promise.all(
-      results.slice(i, i + ARCHIVE_CONCURRENCY).map((result) =>
-        archiveLookup(ctx.billingCustomer, {
-          kind: "rank_check_serp",
-          target: result.keyword,
-          // One series per tracked keyword and device.
-          viewKey: `rank-serp:${ctx.configId}:${result.keywordId}:${result.device}`,
-          params: {
-            configId: ctx.configId,
-            runId: ctx.runId,
-            trackingKeywordId: result.keywordId,
-            device: result.device,
-            domain: ctx.domain,
-          },
-          market: {
-            locationCode: ctx.locationCode,
-            languageCode: ctx.languageCode,
-          },
-          fetchedAt,
-          payload: {
-            keyword: result.keyword,
-            device: result.device,
-            position: result.position,
-            url: result.url,
-            items: result.serpItems,
-          },
-        }),
-      ),
-    );
-  }
-}
+import {
+  archiveSerps,
+  mapResultsToSnapshotRows,
+  reuseSharedSerps,
+  type CheckContext,
+  type KeywordEntry,
+  type RankCheckResultWithDevice,
+} from "@/server/workflows/rankCheckSerpReuse";
 
 const SINGLE_ATTEMPT_STEP_CONFIG = {
   retries: { limit: 0, delay: "1 second" as const },
   timeout: "2 minutes" as const,
 };
-
-type KeywordEntry = { id: string; keyword: string };
-type RankCheckResultWithDevice = RankCheckResult & {
-  device: "desktop" | "mobile";
-};
-
-function mapResultsToSnapshotRows(
-  runId: string,
-  results: RankCheckResultWithDevice[],
-) {
-  return results.map((r) => ({
-    runId,
-    trackingKeywordId: r.keywordId,
-    keyword: r.keyword,
-    device: r.device,
-    position: r.position,
-    url: r.url,
-    serpFeatures:
-      r.serpFeatures.length > 0 ? JSON.stringify(r.serpFeatures) : null,
-  }));
-}
-
-interface CheckContext {
-  client: ReturnType<typeof createDataforseoClient>;
-  billingCustomer: BillingCustomerContext;
-  configId: string;
-  keywords: KeywordEntry[];
-  devices: RankTrackingConfig["devices"];
-  serpDepth: number;
-  domain: string;
-  locationCode: number;
-  languageCode: string;
-  locationName?: string;
-  runId: string;
-}
 
 /** Expand keywords into one task input per keyword/device pair. */
 function expandToTaskInputs(
@@ -130,8 +57,11 @@ function expandToTaskInputs(
  */
 async function checkBatchLive(
   ctx: CheckContext,
-  tasks: RankCheckTaskInput[],
+  batch: RankCheckTaskInput[],
 ): Promise<number> {
+  const tasks = await reuseSharedSerps(ctx, batch);
+  const reusedCount = batch.length - tasks.length;
+  if (tasks.length === 0) return reusedCount;
   let settled: PromiseSettledResult<RankCheckResult>[];
   try {
     settled = await ctx.client.serp.rankCheckBatch(
@@ -178,7 +108,7 @@ async function checkBatchLive(
     );
     await archiveSerps(ctx, results);
   }
-  return results.length;
+  return reusedCount + results.length;
 }
 
 /**
@@ -343,7 +273,12 @@ export async function runQueuedCheck(
   step: WorkflowStep,
   ctx: CheckContext,
 ): Promise<QueuedCheckStats> {
-  const taskInputs = expandToTaskInputs(ctx.keywords, ctx.devices);
+  const taskInputs = await pgStep(
+    step,
+    "reuse-shared-serps",
+    SINGLE_ATTEMPT_STEP_CONFIG,
+    () => reuseSharedSerps(ctx, expandToTaskInputs(ctx.keywords, ctx.devices)),
+  );
 
   // Post all tasks to the queue, <=100 per request, one metered step each.
   // A failed chunk must not abort the run — earlier chunks were already
