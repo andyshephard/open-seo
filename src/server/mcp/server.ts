@@ -32,6 +32,7 @@ import { getBacklinksProfileTool } from "@/server/mcp/tools/get-backlinks-profil
 import { getDomainKeywordSuggestionsTool } from "@/server/mcp/tools/get-domain-keyword-suggestions";
 import { getDomainOverviewTool } from "@/server/mcp/tools/get-domain-overview";
 import { getResearchHistoryTool } from "@/server/mcp/tools/get-research-history";
+import { getSearchConsoleHistoryTool } from "@/server/mcp/tools/get-search-console-history";
 import {
   getResearchArchiveEntryTool,
   listResearchArchiveTool,
@@ -218,6 +219,7 @@ export function createOpenSeoMcpServer(authProps: McpProps) {
   register(saveKeywordsTool);
   register(getDomainOverviewTool);
   register(getResearchHistoryTool);
+  register(getSearchConsoleHistoryTool);
   register(listResearchArchiveTool);
   register(getResearchArchiveEntryTool);
   register(getDomainKeywordSuggestionsTool);

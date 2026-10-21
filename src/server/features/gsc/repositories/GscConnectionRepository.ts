@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { gscConnections } from "@/db/schema";
+import { gscConnections, projects } from "@/db/schema";
 
 export type GscConnection = typeof gscConnections.$inferSelect;
 
@@ -55,8 +55,21 @@ async function deleteByProjectId(projectId: string): Promise<void> {
     .where(eq(gscConnections.projectId, projectId));
 }
 
+/** Every connection on a live (unarchived) project, for the daily history sync. */
+async function listActive() {
+  return db
+    .select({
+      connection: gscConnections,
+      organizationId: projects.organizationId,
+    })
+    .from(gscConnections)
+    .innerJoin(projects, eq(projects.id, gscConnections.projectId))
+    .where(and(isNull(projects.archivedAt)));
+}
+
 export const GscConnectionRepository = {
   getByProjectId,
+  listActive,
   upsert,
   deleteByProjectId,
 };

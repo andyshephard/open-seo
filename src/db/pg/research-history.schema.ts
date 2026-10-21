@@ -163,3 +163,50 @@ export const researchArchiveEntries = pgTable(
     index("research_archive_fetched_idx").on(table.fetchedAt),
   ],
 );
+
+export const gscDailyTotals = pgTable(
+  "gsc_daily_totals",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    clicks: integer("clicks").notNull(),
+    impressions: bigint("impressions", { mode: "number" }).notNull(),
+    ctr: real("ctr").notNull(),
+    position: real("position").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gsc_daily_totals_day").on(table.projectId, table.date),
+  ],
+);
+
+export const gscDailyRows = pgTable(
+  "gsc_daily_rows",
+  {
+    id: serial("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    dimension: text("dimension").notNull(),
+    value: text("value").notNull(),
+    clicks: integer("clicks").notNull(),
+    impressions: bigint("impressions", { mode: "number" }).notNull(),
+    ctr: real("ctr").notNull(),
+    position: real("position").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gsc_daily_rows_day").on(
+      table.projectId,
+      table.dimension,
+      table.value,
+      table.date,
+    ),
+    index("gsc_daily_rows_project_date_idx").on(
+      table.projectId,
+      table.dimension,
+      table.date,
+    ),
+  ],
+);

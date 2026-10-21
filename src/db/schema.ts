@@ -137,4 +137,6 @@ export const {
   keywordMetricSnapshots,
   researchSnapshotSchedules,
   researchArchiveEntries,
+  gscDailyTotals,
+  gscDailyRows,
 } = schema;

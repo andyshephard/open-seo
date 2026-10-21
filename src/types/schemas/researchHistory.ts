@@ -31,6 +31,7 @@ export const RESEARCH_ARCHIVE_KINDS = [
   "brand_lookup",
   "prompt_research",
   "prompt_explorer",
+  "ga4_landing_pages",
 ] as const;
 export type ResearchArchiveKind = (typeof RESEARCH_ARCHIVE_KINDS)[number];
 
@@ -108,4 +109,12 @@ export const rankCheckSerpParamsSchema = z.object({
   configId: z.string(),
   trackingKeywordId: z.string(),
   device: z.enum(["desktop", "mobile"]),
+});
+
+export const searchConsoleHistorySchema = z.object({
+  projectId: z.string().min(1),
+  days: z.number().int().min(7).max(730).default(90),
+  dimension: z.enum(["query", "page"]).default("query"),
+  limit: z.number().int().min(1).max(500).default(50),
+  value: z.string().trim().min(1).max(2048).optional(),
 });

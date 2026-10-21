@@ -10,12 +10,14 @@ import {
   getArchiveEntry,
   listArchive,
 } from "@/server/features/research-history/services/researchArchive";
+import { getSearchConsoleHistory as loadSearchConsoleHistory } from "@/server/features/research-history/services/searchConsoleHistory";
 import { AppError } from "@/server/lib/errors";
 import { requireProjectContext } from "@/serverFunctions/middleware";
 import {
   listResearchArchiveSchema,
   projectIdInputSchema,
   rankCheckSerpSchema,
+  searchConsoleHistorySchema,
   researchHistoryInputSchema,
   setResearchSnapshotScheduleSchema,
 } from "@/types/schemas/researchHistory";
@@ -107,3 +109,10 @@ export const getResearchArchiveEntry = createServerFn({ method: "POST" })
     );
     return { ...entry, resultJson: JSON.stringify(result ?? null) };
   });
+
+export const getSearchConsoleHistory = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(searchConsoleHistorySchema)
+  .handler(async ({ data, context }) =>
+    loadSearchConsoleHistory({ ...data, projectId: context.projectId }),
+  );

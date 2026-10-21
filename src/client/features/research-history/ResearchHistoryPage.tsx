@@ -15,6 +15,7 @@ import { getResearchHistory } from "@/serverFunctions/researchHistory";
 import { RESEARCH_HISTORY_MONTHS } from "@/types/schemas/researchHistory";
 import { HistoryMetricChart, type HistorySeries } from "./HistoryMetricChart";
 import { ResearchArchiveLog } from "./ResearchArchiveLog";
+import { SearchConsoleHistorySection } from "./SearchConsoleHistorySection";
 import { ResearchSnapshotScheduleCard } from "./ResearchSnapshotScheduleCard";
 
 type History = Awaited<ReturnType<typeof getResearchHistory>>;
@@ -281,6 +282,8 @@ export function ResearchHistoryPage({ projectId }: { projectId: string }) {
             </TableCard>
           </>
         ) : null}
+
+        <SearchConsoleHistorySection projectId={projectId} days={months * 30} />
 
         <ResearchArchiveLog projectId={projectId} />
       </div>

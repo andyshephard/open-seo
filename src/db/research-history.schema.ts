@@ -194,3 +194,55 @@ export const researchArchiveEntries = sqliteTable(
     index("research_archive_fetched_idx").on(table.fetchedAt),
   ],
 );
+
+// Search Console history, synced daily from the project's connected property
+// so it outlives Google's 16-month window and can be read without calling
+// Google. One row per day for the site, and for its top queries and pages
+// (`gsc_daily_rows.dimension` is "query" or "page"). Dates are the property's
+// GSC dates (YYYY-MM-DD); only finalized days are stored.
+export const gscDailyTotals = sqliteTable(
+  "gsc_daily_totals",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    clicks: integer("clicks").notNull(),
+    impressions: integer("impressions").notNull(),
+    ctr: real("ctr").notNull(),
+    position: real("position").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gsc_daily_totals_day").on(table.projectId, table.date),
+  ],
+);
+
+export const gscDailyRows = sqliteTable(
+  "gsc_daily_rows",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    dimension: text("dimension").notNull(),
+    value: text("value").notNull(),
+    clicks: integer("clicks").notNull(),
+    impressions: integer("impressions").notNull(),
+    ctr: real("ctr").notNull(),
+    position: real("position").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gsc_daily_rows_day").on(
+      table.projectId,
+      table.dimension,
+      table.value,
+      table.date,
+    ),
+    index("gsc_daily_rows_project_date_idx").on(
+      table.projectId,
+      table.dimension,
+      table.date,
+    ),
+  ],
+);

@@ -44,6 +44,7 @@ const SECTIONS = {
     kinds: ["keyword_research", "serp_analysis"],
   },
   rank: { label: "Rank Tracking", kinds: ["rank_check_serp"] },
+  analytics: { label: "Google Analytics", kinds: ["ga4_landing_pages"] },
   ai: {
     label: "AI search",
     kinds: ["brand_lookup", "prompt_research", "prompt_explorer"],
@@ -95,6 +96,7 @@ const KIND_LABELS: Record<string, string> = {
   brand_lookup: "Brand lookup",
   prompt_research: "Prompt research",
   prompt_explorer: "Prompt explorer answer",
+  ga4_landing_pages: "GA4 organic landing pages",
 };
 
 const ORIGIN_LABELS: Record<string, string> = {

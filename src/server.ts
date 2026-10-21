@@ -201,6 +201,16 @@ export default {
     _ctx: ExecutionContext,
   ) {
     if (controller.cron === MCP_OAUTH_PURGE_CRON) {
+      // Daily copy of Search Console and GA4 history, in every deployment mode.
+      try {
+        await withPgClient(async () => {
+          const { runDailySearchHistorySync } =
+            await import("@/server/features/research-history/services/searchHistorySync");
+          await runDailySearchHistorySync();
+        });
+      } catch (err) {
+        console.error("[cron] Search history sync failed:", err);
+      }
       // Only hosted mode runs the OAuth provider (and has OAUTH_KV bound).
       if (isHostedAuthMode(getAuthMode(env.AUTH_MODE))) {
         const result = await openSeoOAuthProvider.purgeExpiredData(

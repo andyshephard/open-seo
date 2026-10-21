@@ -77,6 +77,12 @@ import {
 } from "@/server/mcp/tools/search-console-tools";
 import { whoamiTool } from "@/server/mcp/tools/whoami";
 import { explorePromptTool } from "@/server/mcp/tools/explore-prompt";
+import { getResearchHistoryTool } from "@/server/mcp/tools/get-research-history";
+import { getSearchConsoleHistoryTool } from "@/server/mcp/tools/get-search-console-history";
+import {
+  getResearchArchiveEntryTool,
+  listResearchArchiveTool,
+} from "@/server/mcp/tools/research-archive-tools";
 import { discoverSiteUrls, readPages, readSite } from "@/server/lib/scrape";
 import { capToolOutput } from "@/server/features/sam/samToolOutput";
 import openSeoFactSheet from "@/server/features/sam/openseo-fact-sheet.md?raw";
@@ -460,5 +466,9 @@ export function buildSamMcpTools(
     get_audit_status: waitingAuditStatusTool(adaptTool),
     get_audit_issues: adaptTool(getAuditIssuesTool),
     get_audit_pages: adaptTool(getAuditPagesTool),
+    get_research_history: adaptTool(getResearchHistoryTool),
+    get_search_console_history: adaptTool(getSearchConsoleHistoryTool),
+    list_research_archive: adaptTool(listResearchArchiveTool),
+    get_research_archive_entry: adaptTool(getResearchArchiveEntryTool),
   };
 }

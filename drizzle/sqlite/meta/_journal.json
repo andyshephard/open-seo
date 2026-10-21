@@ -400,6 +400,13 @@
       "when": 1792590678529,
       "tag": "0056_mushy_rawhide_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1792594034982,
+      "tag": "0057_sticky_golden_guardian",
+      "breakpoints": true
     }
   ]
 }
