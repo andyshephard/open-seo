@@ -11,6 +11,7 @@ import type { ResearchScope } from "@/shared/researchScope";
 import { mapKeywordItem } from "@/server/features/domain/services/domainKeywordMapper";
 import { getKeywordsPage } from "@/server/features/domain/services/domainKeywordsPage";
 import { getPagesPage } from "@/server/features/domain/services/domainPagesPage";
+import { captureDomainOverview } from "@/server/features/research-history/services/researchHistoryCapture";
 
 // Lets a caller attribute spend to its own feature (e.g. the SAM agent). Applied
 // to the DataForSEO call, not the cache key, so cached results are shared
@@ -28,6 +29,9 @@ const domainOverviewResultSchema = z.object({
   organicKeywords: z.number().nullable(),
   backlinks: z.number().nullable(),
   referringDomains: z.number().nullable(),
+  // Ranking-position buckets for research history; absent in older entries.
+  top3Keywords: z.number().nullable().default(null),
+  top10Keywords: z.number().nullable().default(null),
   hasData: z.boolean(),
   fetchedAt: z.string(),
 });
@@ -66,6 +70,7 @@ async function getOverview(
   const cachedRaw = await getCached(cacheKey);
   const cached = domainOverviewResultSchema.safeParse(cachedRaw);
   if (cached.success && cached.data.hasData) {
+    await recordOverview(billingCustomer, input, cached.data);
     return {
       ...cached.data,
       scope: target.scope,
@@ -94,12 +99,19 @@ async function getOverview(
       ? Math.round(metrics.metrics.organic.count)
       : null;
 
+  const organic = metrics?.metrics?.organic;
+  const top3Keywords =
+    organic != null ? (organic.pos_1 ?? 0) + (organic.pos_2_3 ?? 0) : null;
+
   const stored: z.infer<typeof domainOverviewResultSchema> = {
     domain,
     organicTraffic,
     organicKeywords,
     backlinks: null,
     referringDomains: null,
+    top3Keywords,
+    top10Keywords:
+      top3Keywords != null ? top3Keywords + (organic?.pos_4_10 ?? 0) : null,
     hasData: organicKeywords != null && organicKeywords > 0,
     fetchedAt: nowIso,
   };
@@ -114,9 +126,27 @@ async function getOverview(
         },
       ),
     );
+    await recordOverview(billingCustomer, input, stored);
   }
 
   return { ...stored, scope: target.scope, displayTarget: target.display };
+}
+
+function recordOverview(
+  billingCustomer: BillingCustomerContext,
+  market: { locationCode: number; languageCode: string },
+  overview: z.infer<typeof domainOverviewResultSchema>,
+) {
+  return captureDomainOverview(billingCustomer, {
+    domain: overview.domain,
+    locationCode: market.locationCode,
+    languageCode: market.languageCode,
+    organicTraffic: overview.organicTraffic,
+    organicKeywords: overview.organicKeywords,
+    top3Keywords: overview.top3Keywords,
+    top10Keywords: overview.top10Keywords,
+    fetchedAt: overview.fetchedAt,
+  });
 }
 
 async function getSuggestedKeywords(

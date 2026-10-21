@@ -15,6 +15,11 @@ vi.mock("@/server/lib/r2-cache", () => ({
   setCached: vi.fn(async () => undefined),
 }));
 
+vi.mock(
+  "@/server/features/research-history/services/researchHistoryCapture",
+  () => ({ captureBacklinkSummary: vi.fn() }),
+);
+
 vi.mock("@/server/lib/dataforseo", () => ({
   normalizeBacklinksTarget: vi.fn(),
   createDataforseoClient: vi.fn(() => ({

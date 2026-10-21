@@ -8,6 +8,7 @@ import {
   setCached,
 } from "@/server/lib/r2-cache";
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
+import { captureKeywordMetrics } from "@/server/features/research-history/services/researchHistoryCapture";
 import type { KeywordResearchRow } from "@/types/keywords";
 import type { ResolvedResearchKeywordsInput } from "@/types/schemas/keywords";
 import { z } from "zod";
@@ -232,8 +233,13 @@ function persistRows(
   input: ResolvedResearchKeywordsInput,
   rows: EnrichedKeyword[],
 ): Promise<void> {
-  return Promise.all(
-    rows.map((row) =>
+  return Promise.all([
+    captureKeywordMetrics(input.projectId, {
+      locationCode: input.locationCode,
+      languageCode: input.languageCode,
+      rows,
+    }),
+    ...rows.map((row) =>
       KeywordResearchRepository.upsertKeywordMetric({
         projectId: input.projectId,
         keyword: row.keyword,
@@ -247,7 +253,7 @@ function persistRows(
         monthlySearchesJson: JSON.stringify(row.trend),
       }),
     ),
-  ).then(
+  ]).then(
     () => undefined,
     (error: unknown) => {
       console.error("keywords.research.persist-metrics failed:", error);

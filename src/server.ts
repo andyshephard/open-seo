@@ -244,6 +244,11 @@ export default {
           await import("@/server/features/ai-visibility/services/scheduledAiVisibility");
         await runScheduledAiVisibility();
       }),
+      withPgClient(async () => {
+        const { runScheduledResearchSnapshots } =
+          await import("@/server/features/research-history/services/researchSnapshots");
+        await runScheduledResearchSnapshots();
+      }),
     ]);
     for (const result of checks)
       if (result.status === "rejected") throw result.reason;

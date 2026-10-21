@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
+import { captureBacklinkSummary } from "@/server/features/research-history/services/researchHistoryCapture";
 import {
   createDataforseoClient,
   normalizeBacklinksTarget,
@@ -89,6 +90,7 @@ export async function profileBacklinksOverview(
     await cache.get(cacheKey),
   );
   if (cached.success) {
+    await recordBacklinkSummary(billingCustomer, cached.data.overview);
     return {
       overview: cached.data.overview,
     };
@@ -148,8 +150,35 @@ export async function profileBacklinksOverview(
     { overview },
     BACKLINKS_OVERVIEW_TTL_SECONDS,
   );
+  await recordBacklinkSummary(billingCustomer, overview);
 
   return { overview };
+}
+
+// Only whole-domain profiles build history: page and subfolder lookups are not
+// comparable with the domain series.
+function recordBacklinkSummary(
+  billingCustomer: BillingCustomerContext,
+  overview: BacklinksOverviewResult,
+) {
+  if (overview.scope !== "domain" && overview.scope !== "subdomains")
+    return Promise.resolve();
+  const { summary } = overview;
+  return captureBacklinkSummary(billingCustomer, {
+    domain: overview.target,
+    includeSubdomains: overview.scope === "subdomains",
+    rank: summary.rank,
+    backlinks: summary.backlinks,
+    referringDomains: summary.referringDomains,
+    referringPages: summary.referringPages,
+    brokenBacklinks: summary.brokenBacklinks,
+    newBacklinks: summary.newBacklinks,
+    lostBacklinks: summary.lostBacklinks,
+    newReferringDomains: summary.newReferringDomains,
+    lostReferringDomains: summary.lostReferringDomains,
+    spamScore: summary.targetSpamScore,
+    fetchedAt: overview.fetchedAt,
+  });
 }
 
 export async function profileBacklinksRowsPage(

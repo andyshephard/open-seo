@@ -1,5 +1,6 @@
 import { KeywordResearchRepository } from "@/server/features/keywords/repositories/KeywordResearchRepository";
 import { normalizeIntent } from "@/server/features/keywords/services/research/helpers";
+import { captureKeywordMetrics } from "@/server/features/research-history/services/researchHistoryCapture";
 import {
   createDataforseoClient,
   fetchKeywordMetricsForList,
@@ -45,6 +46,14 @@ export async function refreshSavedKeywordMetrics(
     const byKeyword = new Map(
       metrics.map((metric) => [metric.keyword.toLowerCase(), metric]),
     );
+    await captureKeywordMetrics(input.projectId, {
+      locationCode,
+      languageCode,
+      rows: groupRows.flatMap((r) => {
+        const metric = byKeyword.get(r.row.keyword.toLowerCase());
+        return metric ? [{ ...metric, keyword: r.row.keyword }] : [];
+      }),
+    });
 
     for (let i = 0; i < groupRows.length; i += REFRESH_UPSERT_BATCH_SIZE) {
       const chunk = groupRows.slice(i, i + REFRESH_UPSERT_BATCH_SIZE);
