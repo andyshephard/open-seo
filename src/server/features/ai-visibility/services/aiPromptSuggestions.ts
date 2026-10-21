@@ -19,6 +19,7 @@ import { AppError } from "@/server/lib/errors";
 import { z } from "zod";
 import { normalizeAiSuggestion } from "@/shared/ai-prompt-suggestions";
 import {
+  generatedAiTopicSchema,
   suggestedAiTopicSchema,
   type GenerateAiPromptsInput,
 } from "@/types/schemas/aiPromptSuggestions";
@@ -70,8 +71,8 @@ export async function generateAiPrompts(
       "You need usage credits to generate prompts.",
     );
   const outputSchema = topicName
-    ? suggestedAiTopicSchema.extend({ name: z.string().trim().min(1).max(120) })
-    : suggestedAiTopicSchema;
+    ? generatedAiTopicSchema.extend({ name: z.string().trim().min(1).max(120) })
+    : generatedAiTopicSchema;
   const result = await generateText({
     model: buildChatAgentModel(
       await getRequiredEnvValue("OPENROUTER_API_KEY"),
@@ -112,7 +113,9 @@ export async function generateAiPrompts(
       ]);
     },
   });
-  const generated = outputSchema.parse(result.output);
+  const generated = (topicName ? outputSchema : suggestedAiTopicSchema).parse(
+    result.output,
+  );
   const name = topicName || (sameTopic(generated.name) ?? generated.name);
   // Read again after generation so suggestions also exclude concurrent saves.
   const latest = await repo.getConfiguration(input.projectId);
