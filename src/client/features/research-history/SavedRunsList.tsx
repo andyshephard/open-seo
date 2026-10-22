@@ -22,6 +22,18 @@ type SavedRun = {
 
 type ClickableProps = { className: string; children: ReactNode };
 
+/**
+ * A metrics refresh is archived under its whole keyword list; name it by its
+ * size instead of listing every keyword.
+ */
+function runTitle(run: SavedRun) {
+  if (run.entries.every((entry) => entry.kind === "keyword_metrics")) {
+    const count = run.target.split(", ").length;
+    return `Keyword metrics for ${count} keyword${count !== 1 ? "s" : ""}`;
+  }
+  return run.target;
+}
+
 function groupRuns(entries: Entry[]): SavedRun[] {
   const runs = new Map<string, SavedRun>();
   for (const entry of entries) {
@@ -66,7 +78,7 @@ export function SavedRunsList({
         {runs.length} saved run{runs.length !== 1 ? "s" : ""} by you and agents
       </CardHeader>
       <CardContent>
-        <ul className="grid gap-2">
+        <ul className="grid min-w-0 gap-2">
           {runs.map((run) => {
             const key = `${run.target}\n${run.date}`;
             const origins = [
@@ -84,7 +96,7 @@ export function SavedRunsList({
                   aria-hidden
                 />
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{run.target}</p>
+                  <p className="truncate font-medium">{runTitle(run)}</p>
                   <p className="truncate text-muted-foreground">
                     {new Date(`${run.date}T00:00:00Z`).toLocaleDateString(
                       undefined,
@@ -99,10 +111,15 @@ export function SavedRunsList({
             const className =
               "flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 text-left transition-colors outline-none hover:bg-foreground/5 focus-visible:ring-3 focus-visible:ring-ring/50";
             return (
-              <li key={key} className="rounded-lg border border-border p-2">
+              <li
+                key={key}
+                className="min-w-0 rounded-lg border border-border p-2"
+              >
                 <div className="flex min-w-0 items-center gap-2">
                   {renderLink(run, { className, children: content }) ?? (
-                    <div className={className}>{content}</div>
+                    <div className={className} title={run.target}>
+                      {content}
+                    </div>
                   )}
                   <Button
                     size="sm"

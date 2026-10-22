@@ -65,14 +65,22 @@ function SearchHistoryState({
           projectId={projectId}
           kinds={["keyword_research", "serp_analysis", "keyword_metrics"]}
           renderLink={(run, props) =>
-            run.entries.some((entry) => entry.kind !== "keyword_metrics") ? (
+            run.entries.every((entry) => entry.kind === "keyword_metrics") ? (
+              // Metrics refreshes cover saved keywords; that page shows them.
+              <Link
+                to="/p/$projectId/saved"
+                params={{ projectId }}
+                title={run.target}
+                {...props}
+              />
+            ) : (
               <Link
                 to="/p/$projectId/keywords"
                 params={{ projectId }}
                 search={{ q: run.target, asOf: run.date }}
                 {...props}
               />
-            ) : null
+            )
           }
         />
         <RecentSearches
