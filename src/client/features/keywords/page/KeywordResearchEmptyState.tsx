@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import { Globe, Search } from "lucide-react";
 import { EmptyState } from "@/client/components/EmptyState";
 import { RecentSearches } from "@/client/components/RecentSearches";
@@ -59,31 +60,47 @@ function SearchHistoryState({
 }) {
   return (
     <div className="pt-1">
-      <RecentSearches
-        items={controller.history}
-        loaded={controller.historyLoaded}
-        onRemove={controller.removeHistoryItem}
-        emptyIcon={Search}
-        emptyTitle="Enter a keyword to get started"
-        emptyDescription="Search for any keyword to see volume, difficulty, CPC, and related keyword ideas."
-        getTitle={(item) => item.keyword}
-        getSubtitle={(item) => item.locationName}
-        renderLink={(item, props) => (
-          <Link
-            from="/p/$projectId/keywords"
-            to="/p/$projectId/keywords"
-            params={{ projectId }}
-            search={{
-              q: item.keyword,
-              loc: item.locationCode,
-              locName: item.localLocationName,
-              grp: controller.preferredGroupKeywords ? true : undefined,
-            }}
-            replace
-            {...props}
-          />
-        )}
-      />
+      <div className="space-y-4">
+        <SavedRunsList
+          projectId={projectId}
+          kinds={["keyword_research", "serp_analysis", "keyword_metrics"]}
+          renderLink={(run, props) =>
+            run.entries.some((entry) => entry.kind !== "keyword_metrics") ? (
+              <Link
+                to="/p/$projectId/keywords"
+                params={{ projectId }}
+                search={{ q: run.target, asOf: run.date }}
+                {...props}
+              />
+            ) : null
+          }
+        />
+        <RecentSearches
+          items={controller.history}
+          loaded={controller.historyLoaded}
+          onRemove={controller.removeHistoryItem}
+          emptyIcon={Search}
+          emptyTitle="Enter a keyword to get started"
+          emptyDescription="Search for any keyword to see volume, difficulty, CPC, and related keyword ideas."
+          getTitle={(item) => item.keyword}
+          getSubtitle={(item) => item.locationName}
+          renderLink={(item, props) => (
+            <Link
+              from="/p/$projectId/keywords"
+              to="/p/$projectId/keywords"
+              params={{ projectId }}
+              search={{
+                q: item.keyword,
+                loc: item.locationCode,
+                locName: item.localLocationName,
+                grp: controller.preferredGroupKeywords ? true : undefined,
+              }}
+              replace
+              {...props}
+            />
+          )}
+        />
+      </div>
     </div>
   );
 }

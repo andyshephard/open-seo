@@ -1,5 +1,7 @@
 /* eslint-disable max-lines, max-lines-per-function -- Domain Overview keeps page-only orchestration colocated to avoid fake indirection. */
+import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, type FormEvent } from "react";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import { useForm, useStore } from "@tanstack/react-form";
 import { Globe, Info } from "lucide-react";
 import { BackButton, PageHeader } from "@/client/components/PageHeader";
@@ -592,22 +594,51 @@ export function DomainOverviewPage({
           </>
         ) : state.overview === null ? (
           <div className="pt-1">
-            <RecentSearches
-              items={state.history}
-              loaded={state.historyLoaded}
-              onRemove={state.removeHistoryItem}
-              emptyIcon={Globe}
-              emptyTitle="Enter a domain to get started"
-              getTitle={(item) => item.domain}
-              getSubtitle={(item) => RESEARCH_SCOPE_LABELS[item.scope]}
-              renderLink={(item, props) => (
-                <button
-                  type="button"
-                  onClick={() => state.handleHistorySelect(item)}
-                  {...props}
-                />
-              )}
-            />
+            <div className="space-y-4">
+              <SavedRunsList
+                projectId={projectId}
+                kinds={[
+                  "domain_overview",
+                  "domain_keywords",
+                  "domain_pages",
+                  "domain_keyword_suggestions",
+                  "ranked_keywords",
+                  "serp_competitors",
+                ]}
+                renderLink={(run, props) =>
+                  run.entries.some((entry) =>
+                    [
+                      "domain_overview",
+                      "domain_keywords",
+                      "domain_pages",
+                    ].includes(entry.kind),
+                  ) ? (
+                    <Link
+                      to="/p/$projectId/domain"
+                      params={{ projectId }}
+                      search={{ domain: run.target, asOf: run.date }}
+                      {...props}
+                    />
+                  ) : null
+                }
+              />
+              <RecentSearches
+                items={state.history}
+                loaded={state.historyLoaded}
+                onRemove={state.removeHistoryItem}
+                emptyIcon={Globe}
+                emptyTitle="Enter a domain to get started"
+                getTitle={(item) => item.domain}
+                getSubtitle={(item) => RESEARCH_SCOPE_LABELS[item.scope]}
+                renderLink={(item, props) => (
+                  <button
+                    type="button"
+                    onClick={() => state.handleHistorySelect(item)}
+                    {...props}
+                  />
+                )}
+              />
+            </div>
           </div>
         ) : (
           <>

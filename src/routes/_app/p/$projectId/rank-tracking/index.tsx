@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import {
   createFileRoute,
   stripSearchParams,
@@ -49,6 +50,15 @@ function RankTrackingIndex() {
         }}
         onAddDomain={() => setShowConfigModal(true)}
       />
+      <div className="px-4 pb-6 md:px-6">
+        <div className="mx-auto max-w-7xl">
+          <SavedRunsList
+            projectId={projectId}
+            kinds={["rank_check_serp", "local_rank_grid", "local_serp"]}
+            renderLink={() => null}
+          />
+        </div>
+      </div>
 
       {showConfigModal && (
         <RankTrackingConfigModal

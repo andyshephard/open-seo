@@ -11,6 +11,8 @@ import {
   SelectValue,
 } from "@/client/components/ui/select";
 import { listResearchArchive } from "@/serverFunctions/researchHistory";
+import { ArchiveEntrySheet } from "./ArchiveEntrySheet";
+import { ARCHIVE_KIND_LABELS, ARCHIVE_ORIGIN_LABELS } from "./archiveLabels";
 import type { ResearchArchiveKind } from "@/types/schemas/researchHistory";
 
 // What a research page's queries should read: an archived day (YYYY-MM-DD),
@@ -60,6 +62,7 @@ export function ArchiveView({
 }) {
   const trimmed = target.trim();
   const [refreshed, setRefreshed] = useState({ nonce: 0, viewKey: "" });
+  const [viewing, setViewing] = useState<string | null>(null);
   const state: ArchiveViewState = {
     asOf,
     refresh: refreshed.nonce > 0 && refreshed.viewKey === viewKey && !asOf,
@@ -125,7 +128,8 @@ export function ArchiveView({
               <>
                 <span className="text-muted-foreground">
                   Archived results, read-only and free. Views not fetched on or
-                  before this day show as not captured.
+                  before this day show as not captured; every result saved that
+                  day is listed below.
                 </span>
                 <Button
                   size="sm"
@@ -162,6 +166,31 @@ export function ArchiveView({
           </div>
         </div>
       ) : null}
+      {asOf ? (
+        <div className="px-4 pt-2 md:px-6">
+          <div className="mx-auto flex max-w-7xl flex-wrap gap-2">
+            {(datesQuery.data?.entries ?? [])
+              .filter((entry) => entry.fetchedAt.slice(0, 10) === asOf)
+              .map((entry) => (
+                <Button
+                  key={entry.id}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setViewing(entry.id)}
+                >
+                  {ARCHIVE_KIND_LABELS[entry.kind] ?? entry.kind}
+                  {entry.params !== "{}" ? ` ${entry.params}` : ""} ·{" "}
+                  {ARCHIVE_ORIGIN_LABELS[entry.origin] ?? entry.origin}
+                </Button>
+              ))}
+          </div>
+        </div>
+      ) : null}
+      <ArchiveEntrySheet
+        projectId={projectId}
+        entryId={viewing}
+        onClose={() => setViewing(null)}
+      />
       {children}
     </ArchiveViewContext.Provider>
   );

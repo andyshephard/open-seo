@@ -1,3 +1,4 @@
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import {
   createFileRoute,
   stripSearchParams,
@@ -29,15 +30,26 @@ function SearchPerformanceRoute() {
   const navigate = useNavigate({ from: Route.fullPath });
   const search = Route.useSearch();
   return (
-    <SearchPerformancePage
-      projectId={projectId}
-      search={search}
-      onSearchChange={(update) => {
-        void navigate({
-          search: (prev) => ({ ...prev, ...update }),
-          replace: true,
-        });
-      }}
-    />
+    <>
+      <SearchPerformancePage
+        projectId={projectId}
+        search={search}
+        onSearchChange={(update) => {
+          void navigate({
+            search: (prev) => ({ ...prev, ...update }),
+            replace: true,
+          });
+        }}
+      />
+      <div className="px-4 pb-6 md:px-6">
+        <div className="mx-auto max-w-7xl">
+          <SavedRunsList
+            projectId={projectId}
+            kinds={["url_inspection", "ga4_landing_pages"]}
+            renderLink={() => null}
+          />
+        </div>
+      </div>
+    </>
   );
 }

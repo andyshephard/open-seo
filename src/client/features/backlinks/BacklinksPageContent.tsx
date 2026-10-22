@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import { Link } from "@tanstack/react-router";
 import { Link2 } from "lucide-react";
 import type { OnChangeFn, SortingState } from "@tanstack/react-table";
@@ -94,33 +95,52 @@ export function BacklinksBody({
 
   if (!searchState.target) {
     return (
-      <RecentSearches
-        items={history}
-        loaded={historyLoaded}
-        onRemove={onRemoveHistoryItem}
-        emptyIcon={Link2}
-        emptyTitle="Enter a domain or URL to get started"
-        getTitle={(item) => item.target}
-        getSubtitle={(item) => RESEARCH_SCOPE_LABELS[item.scope]}
-        renderLink={(item, props) => (
-          <Link
-            from="/p/$projectId/backlinks"
-            to="/p/$projectId/backlinks"
-            params={{ projectId }}
-            search={(prev) => ({
-              ...prev,
-              target: item.target,
-              scope: toScopeSearchParam(item.target, item.scope),
-              tab: undefined,
-              page: undefined,
-              sort: undefined,
-              order: undefined,
-            })}
-            replace
-            {...props}
-          />
-        )}
-      />
+      <div className="space-y-4">
+        <SavedRunsList
+          projectId={projectId}
+          kinds={[
+            "backlinks_overview",
+            "backlinks_rows",
+            "backlinks_referring_domains",
+            "backlinks_top_pages",
+          ]}
+          renderLink={(run, props) => (
+            <Link
+              to="/p/$projectId/backlinks"
+              params={{ projectId }}
+              search={{ target: run.target, asOf: run.date }}
+              {...props}
+            />
+          )}
+        />
+        <RecentSearches
+          items={history}
+          loaded={historyLoaded}
+          onRemove={onRemoveHistoryItem}
+          emptyIcon={Link2}
+          emptyTitle="Enter a domain or URL to get started"
+          getTitle={(item) => item.target}
+          getSubtitle={(item) => RESEARCH_SCOPE_LABELS[item.scope]}
+          renderLink={(item, props) => (
+            <Link
+              from="/p/$projectId/backlinks"
+              to="/p/$projectId/backlinks"
+              params={{ projectId }}
+              search={(prev) => ({
+                ...prev,
+                target: item.target,
+                scope: toScopeSearchParam(item.target, item.scope),
+                tab: undefined,
+                page: undefined,
+                sort: undefined,
+                order: undefined,
+              })}
+              replace
+              {...props}
+            />
+          )}
+        />
+      </div>
     );
   }
 

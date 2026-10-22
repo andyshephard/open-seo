@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { identity, sortBy } from "remeda";
@@ -252,31 +253,38 @@ export function PromptExplorerPage({
       }
       renderResults={(result) => <PromptExplorerResults result={result} />}
       history={
-        <RecentSearches
-          items={history}
-          loaded={historyLoaded}
-          onRemove={removeHistoryItem}
-          emptyIcon={MessageSquare}
-          emptyTitle="Enter a prompt to compare model answers"
-          getTitle={(item) => item.prompt}
-          getSubtitle={(item) => item.models.map(formatModelLabel).join(", ")}
-          renderLink={(item, props) => (
-            <Link
-              from="/p/$projectId/prompt-explorer"
-              to="/p/$projectId/prompt-explorer"
-              params={{ projectId }}
-              search={{
-                q: item.prompt,
-                models: item.models,
-                web: item.webSearch ? undefined : false,
-                cc: item.webSearchCountryCode,
-                hb: item.highlightBrand || undefined,
-              }}
-              replace
-              {...props}
-            />
-          )}
-        />
+        <div className="space-y-4">
+          <SavedRunsList
+            projectId={projectId}
+            kinds={["prompt_explorer"]}
+            renderLink={() => null}
+          />
+          <RecentSearches
+            items={history}
+            loaded={historyLoaded}
+            onRemove={removeHistoryItem}
+            emptyIcon={MessageSquare}
+            emptyTitle="Enter a prompt to compare model answers"
+            getTitle={(item) => item.prompt}
+            getSubtitle={(item) => item.models.map(formatModelLabel).join(", ")}
+            renderLink={(item, props) => (
+              <Link
+                from="/p/$projectId/prompt-explorer"
+                to="/p/$projectId/prompt-explorer"
+                params={{ projectId }}
+                search={{
+                  q: item.prompt,
+                  models: item.models,
+                  web: item.webSearch ? undefined : false,
+                  cc: item.webSearchCountryCode,
+                  hb: item.highlightBrand || undefined,
+                }}
+                replace
+                {...props}
+              />
+            )}
+          />
+        </div>
       }
     />
   );
