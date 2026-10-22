@@ -14,10 +14,19 @@ const { testDb, getOverview, profileOverview } = await vi.hoisted(async () => {
 vi.mock("cloudflare:workers", () => ({ env: { DATABASE_PROVIDER: "d1" } }));
 vi.mock("@/db", () => ({ db: testDb.db }));
 vi.mock("@/server/features/domain/services/DomainService", () => ({
-  DomainService: { getOverview },
+  DomainService: {
+    getOverview,
+    getKeywordsPage: vi.fn(),
+    getPagesPage: vi.fn(),
+  },
 }));
 vi.mock("@/server/features/backlinks/services/BacklinksService", () => ({
-  BacklinksService: { profileOverview },
+  BacklinksService: {
+    profileOverview,
+    profileBacklinksPage: vi.fn(),
+    profileReferringDomainsPage: vi.fn(),
+    profileTopPagesPage: vi.fn(),
+  },
 }));
 vi.mock("@/server/features/keywords/services/KeywordResearchService", () => ({
   KeywordResearchService: { refreshSavedKeywordMetrics: vi.fn() },
@@ -46,7 +55,7 @@ it("captures a due project once per tick and advances its schedule", async () =>
 
   expect(getOverview).toHaveBeenCalledTimes(2);
   expect(getOverview).toHaveBeenCalledWith(
-    expect.objectContaining({ domain: "rival.com" }),
+    expect.objectContaining({ domain: "rival.com", maxAgeDays: 1 }),
     expect.objectContaining({ projectId: "project" }),
   );
   expect(profileOverview).toHaveBeenCalledTimes(2);

@@ -5,6 +5,16 @@ import { DomainService } from "@/server/features/domain/services/DomainService";
 import { KeywordResearchService } from "@/server/features/keywords/services/KeywordResearchService";
 import { ProjectContextRepository } from "@/server/features/project-context/repositories/ProjectContextRepository";
 import { computeNextCheckAt } from "@/shared/rank-tracking";
+import type { CacheFreshness } from "@/server/lib/r2-cache";
+import {
+  backlinksRowsPageRequestSchema,
+  referringDomainsPageRequestSchema,
+  topPagesPageRequestSchema,
+} from "@/types/schemas/backlinks";
+import {
+  domainKeywordsPageRequestSchema,
+  domainPagesPageRequestSchema,
+} from "@/types/schemas/domain";
 import type { ResearchSnapshotInterval } from "@/types/schemas/researchHistory";
 import { ResearchHistoryRepository as repo } from "../repositories/ResearchHistoryRepository";
 import { pruneResearchArchive } from "./researchArchive";
@@ -28,6 +38,8 @@ export async function captureProjectSnapshot(
     locationCode: number;
     languageCode: string;
     includeKeywords: boolean;
+    /** Snapshot now buys fresh data; the schedule accepts only today's. */
+    freshness: CacheFreshness;
   },
 ) {
   const competitors = await ProjectContextRepository.listCompetitors(
@@ -40,27 +52,62 @@ export async function captureProjectSnapshot(
   ).slice(0, MAX_COMPETITORS + 1);
 
   const results = [];
+  const market = {
+    locationCode: input.locationCode,
+    languageCode: input.languageCode,
+  };
   for (const domain of domains) {
+    // The summaries plus the first view of every table on the Domain
+    // Overview and Backlinks pages, requested exactly as those pages request
+    // them, so each snapshot opens there in full.
+    const page = { projectId: customer.projectId, ...input.freshness };
+    const domainView = { ...page, domain, ...market };
+    const backlinksView = { ...page, target: domain };
     results.push(
-      ...(await Promise.allSettled([
-        DomainService.getOverview(
-          {
-            projectId: customer.projectId,
-            domain,
-            locationCode: input.locationCode,
-            languageCode: input.languageCode,
-          },
-          customer,
-        ),
-        BacklinksService.profileOverview({ target: domain }, customer),
-      ])),
+      ...(await Promise.allSettled(
+        [
+          () => DomainService.getOverview(domainView, customer),
+          () =>
+            DomainService.getKeywordsPage(
+              {
+                ...domainKeywordsPageRequestSchema.parse(domainView),
+                ...market,
+              },
+              customer,
+            ),
+          () =>
+            DomainService.getPagesPage(
+              { ...domainPagesPageRequestSchema.parse(domainView), ...market },
+              customer,
+            ),
+          () => BacklinksService.profileOverview(backlinksView, customer),
+          () =>
+            BacklinksService.profileBacklinksPage(
+              backlinksRowsPageRequestSchema.parse(backlinksView),
+              customer,
+              { hideSpam: true },
+            ),
+          () =>
+            BacklinksService.profileReferringDomainsPage(
+              referringDomainsPageRequestSchema.parse(backlinksView),
+              customer,
+              { hideSpam: false },
+            ),
+          () =>
+            BacklinksService.profileTopPagesPage(
+              topPagesPageRequestSchema.parse(backlinksView),
+              customer,
+            ),
+          // Each lookup settles on its own, including a bad request.
+        ].map(async (lookup) => lookup()),
+      )),
     );
   }
   if (input.includeKeywords)
     results.push(
       ...(await Promise.allSettled([
         KeywordResearchService.refreshSavedKeywordMetrics(
-          { projectId: customer.projectId },
+          { projectId: customer.projectId, ...input.freshness },
           customer,
         ),
       ])),
@@ -153,6 +200,9 @@ export async function runScheduledResearchSnapshots() {
           locationCode: schedule.locationCode,
           languageCode: schedule.languageCode,
           includeKeywords: schedule.includeKeywords,
+          // A week has passed, so stored results have mostly expired; reuse
+          // only what another lookup already bought today.
+          freshness: { maxAgeDays: 1 },
         },
       );
       await repo.recordScheduleResult(projectId, {

@@ -49,7 +49,7 @@ export const setResearchSnapshotSchedule = createServerFn({ method: "POST" })
     }),
   );
 
-/** Paid: runs the same lookups as one scheduled snapshot, right now. */
+/** Paid: runs the same lookups as one scheduled snapshot, fresh, right now. */
 export const captureResearchSnapshotNow = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(
@@ -70,6 +70,8 @@ export const captureResearchSnapshotNow = createServerFn({ method: "POST" })
         locationCode: context.project.locationCode,
         languageCode: context.project.languageCode,
         includeKeywords: data.includeKeywords,
+        // The user confirmed the spend: always buy today's data.
+        freshness: { refresh: true },
       },
     ),
   );

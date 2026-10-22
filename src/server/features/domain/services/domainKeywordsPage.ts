@@ -84,8 +84,14 @@ export async function getKeywordsPage(
     pageSize: input.pageSize,
     sortMode: input.sortMode,
     sortOrder: input.sortOrder,
-    filters: input.filters,
-    search: input.search,
+    // Empty filter fields mean "no filter" however a caller spells them, so
+    // the app's views and snapshots share one entry.
+    filters: Object.fromEntries(
+      Object.entries(input.filters).filter(
+        ([, value]) => value !== undefined && value !== "",
+      ),
+    ),
+    search: input.search?.trim() || undefined,
   });
 
   if (input.asOf)

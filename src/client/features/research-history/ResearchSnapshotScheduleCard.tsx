@@ -82,9 +82,12 @@ export function ResearchSnapshotScheduleCard({
       <CardHeader>
         <CardTitle className="text-sm">Scheduled snapshots</CardTitle>
         <CardDescription>
-          Captures domain overview and backlinks for your domain and saved
-          competitors on a schedule, so history keeps growing without manual
-          lookups. Each snapshot uses data credits.
+          Fetches your domain and every saved competitor: domain overview,
+          ranked keywords and top pages, backlinks summary, backlinks, referring
+          domains and linked pages (plus saved keyword metrics). Each result
+          opens on its own page (Domain Overview, Backlinks, Keyword Research).
+          Snapshot now always buys fresh data; the schedule reuses only data
+          bought the same day. Uses data credits.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-4">
@@ -129,7 +132,7 @@ export function ResearchSnapshotScheduleCard({
           {confirming ? (
             <>
               <span className="text-xs text-muted-foreground">
-                Uses data credits now.
+                Buys fresh data for every domain now.
               </span>
               <Button
                 size="sm"
