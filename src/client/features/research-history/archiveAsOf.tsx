@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/client/components/ui/select";
 import { listResearchArchive } from "@/serverFunctions/researchHistory";
-import { ArchiveEntrySheet } from "./ArchiveEntrySheet";
+import { Link } from "@tanstack/react-router";
 import { ARCHIVE_KIND_LABELS, ARCHIVE_ORIGIN_LABELS } from "./archiveLabels";
 import type { ResearchArchiveKind } from "@/types/schemas/researchHistory";
 
@@ -62,7 +62,6 @@ export function ArchiveView({
 }) {
   const trimmed = target.trim();
   const [refreshed, setRefreshed] = useState({ nonce: 0, viewKey: "" });
-  const [viewing, setViewing] = useState<string | null>(null);
   const state: ArchiveViewState = {
     asOf,
     refresh: refreshed.nonce > 0 && refreshed.viewKey === viewKey && !asOf,
@@ -176,7 +175,13 @@ export function ArchiveView({
                   key={entry.id}
                   size="sm"
                   variant="ghost"
-                  onClick={() => setViewing(entry.id)}
+                  nativeButton={false}
+                  render={
+                    <Link
+                      to="/p/$projectId/archive/$entryId"
+                      params={{ projectId, entryId: entry.id }}
+                    />
+                  }
                 >
                   {ARCHIVE_KIND_LABELS[entry.kind] ?? entry.kind}
                   {entry.params !== "{}" ? ` ${entry.params}` : ""} ·{" "}
@@ -186,11 +191,6 @@ export function ArchiveView({
           </div>
         </div>
       ) : null}
-      <ArchiveEntrySheet
-        projectId={projectId}
-        entryId={viewing}
-        onClose={() => setViewing(null)}
-      />
       {children}
     </ArchiveViewContext.Provider>
   );

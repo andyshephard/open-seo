@@ -5,7 +5,7 @@ import { Button } from "@/client/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/client/components/ui/card";
 import { listResearchArchive } from "@/serverFunctions/researchHistory";
 import type { ResearchArchiveKind } from "@/types/schemas/researchHistory";
-import { ArchiveEntrySheet } from "./ArchiveEntrySheet";
+import { Link } from "@tanstack/react-router";
 import { ARCHIVE_KIND_LABELS, ARCHIVE_ORIGIN_LABELS } from "./archiveLabels";
 
 const MAX_RUNS = 15;
@@ -62,7 +62,6 @@ export function SavedRunsList({
   renderLink: (run: SavedRun, props: ClickableProps) => ReactNode | null;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
   const runsQuery = useQuery({
     queryKey: ["savedRuns", projectId, kinds],
     queryFn: () =>
@@ -121,13 +120,29 @@ export function SavedRunsList({
                       {content}
                     </div>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setExpanded(expanded === key ? null : key)}
-                  >
-                    View data
-                  </Button>
+                  {run.entries.length === 1 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      nativeButton={false}
+                      render={
+                        <Link
+                          to="/p/$projectId/archive/$entryId"
+                          params={{ projectId, entryId: run.entries[0].id }}
+                        />
+                      }
+                    >
+                      View data
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setExpanded(expanded === key ? null : key)}
+                    >
+                      View data
+                    </Button>
+                  )}
                 </div>
                 {expanded === key ? (
                   <ul className="mt-2 grid gap-1 border-t border-border pt-2">
@@ -156,7 +171,13 @@ export function SavedRunsList({
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => setViewing(entry.id)}
+                          nativeButton={false}
+                          render={
+                            <Link
+                              to="/p/$projectId/archive/$entryId"
+                              params={{ projectId, entryId: entry.id }}
+                            />
+                          }
                         >
                           Open
                         </Button>
@@ -169,11 +190,6 @@ export function SavedRunsList({
           })}
         </ul>
       </CardContent>
-      <ArchiveEntrySheet
-        projectId={projectId}
-        entryId={viewing}
-        onClose={() => setViewing(null)}
-      />
     </Card>
   );
 }

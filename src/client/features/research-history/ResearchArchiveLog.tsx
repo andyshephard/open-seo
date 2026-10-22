@@ -19,7 +19,6 @@ import {
   TableRow,
 } from "@/client/components/ui/table";
 import { listResearchArchive } from "@/serverFunctions/researchHistory";
-import { ArchiveEntrySheet } from "./ArchiveEntrySheet";
 import { ARCHIVE_KIND_LABELS, ARCHIVE_ORIGIN_LABELS } from "./archiveLabels";
 import type { ResearchArchiveKind } from "@/types/schemas/researchHistory";
 
@@ -94,15 +93,7 @@ function readConfigId(params: string) {
   }
 }
 
-function OpenLink({
-  projectId,
-  entry,
-  onView,
-}: {
-  projectId: string;
-  entry: Entry;
-  onView: (id: string) => void;
-}) {
+function OpenLink({ projectId, entry }: { projectId: string; entry: Entry }) {
   const asOf = entry.fetchedAt.slice(0, 10);
   switch (entry.kind) {
     case "domain_overview":
@@ -171,9 +162,13 @@ function OpenLink({
     }
     default:
       return (
-        <Button size="sm" variant="ghost" onClick={() => onView(entry.id)}>
+        <Link
+          to="/p/$projectId/archive/$entryId"
+          params={{ projectId, entryId: entry.id }}
+          className="text-primary hover:underline"
+        >
           View
-        </Button>
+        </Link>
       );
   }
 }
@@ -181,7 +176,6 @@ function OpenLink({
 /** Every archived research lookup in the project, newest first. */
 export function ResearchArchiveLog({ projectId }: { projectId: string }) {
   const [section, setSection] = useState<Section>("all");
-  const [viewing, setViewing] = useState<string | null>(null);
   const kinds = SECTIONS[section].kinds;
   const logQuery = useInfiniteQuery({
     queryKey: ["researchArchiveLog", projectId, section],
@@ -266,11 +260,7 @@ export function ResearchArchiveLog({ projectId }: { projectId: string }) {
                     {ARCHIVE_ORIGIN_LABELS[entry.origin] ?? entry.origin}
                   </TableCell>
                   <TableCell className="text-right">
-                    <OpenLink
-                      projectId={projectId}
-                      entry={entry}
-                      onView={setViewing}
-                    />
+                    <OpenLink projectId={projectId} entry={entry} />
                   </TableCell>
                 </TableRow>
               ))
@@ -278,11 +268,6 @@ export function ResearchArchiveLog({ projectId }: { projectId: string }) {
           </TableBody>
         </Table>
       </TableCard>
-      <ArchiveEntrySheet
-        projectId={projectId}
-        entryId={viewing}
-        onClose={() => setViewing(null)}
-      />
       {logQuery.hasNextPage ? (
         <Button
           size="sm"
