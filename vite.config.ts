@@ -35,6 +35,8 @@ export default defineConfig(
         test: {
           environment: "node",
           include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
+          // Lets DataForSEO requests through the spend cap in unit tests.
+          setupFiles: ["src/server/lib/dataforseo/spend-cap.vitest-setup.ts"],
           restoreMocks: true,
           clearMocks: true,
           server: {

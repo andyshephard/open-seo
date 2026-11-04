@@ -51,6 +51,49 @@ export async function runBatch(
 }
 
 /**
+ * Claim a row, and apply what the claim pays for, atomically and at most once
+ * however many callers race for the same row.
+ *
+ * - `claim` is a conditional write with `.returning()`: it changes the row
+ *   only while it is unclaimed, and returns what it changed.
+ * - Postgres: in one transaction, `claim`, then `apply` only if it changed a
+ *   row. The claim's row lock makes a racing claim wait, then match nothing.
+ * - D1: no interactive transactions, so one batch of `applyWhileUnclaimed`
+ *   (the same write as `apply`, guarded by a condition that holds only while
+ *   the row is unclaimed) then `claim`. A batch is one transaction and SQLite
+ *   runs write transactions one at a time, so the guard and the claim agree.
+ *
+ * Resolves to whether this caller made the claim.
+ */
+export async function runClaimed(steps: {
+  claim: (tx: BatchExecutor) => Promise<unknown[]>;
+  apply: (tx: BatchExecutor) => Promise<unknown>;
+  applyWhileUnclaimed: (tx: BatchExecutor) => Promise<unknown>;
+}): Promise<boolean> {
+  if (getDatabaseProvider() === "postgres") {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- pg tx exposes the same query builder surface as d1Db
+    const pg = pgDb as unknown as {
+      transaction: (
+        fn: (tx: BatchExecutor) => Promise<boolean>,
+      ) => Promise<boolean>;
+    };
+    return pg.transaction(async (tx) => {
+      if ((await steps.claim(tx)).length === 0) return false;
+      await steps.apply(tx);
+      return true;
+    });
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- d1 query builders are BatchItems
+  const batch = [
+    steps.applyWhileUnclaimed(d1Db),
+    steps.claim(d1Db),
+  ] as unknown as [BatchStatement, BatchStatement];
+  const results: unknown[] = await d1Db.batch(batch);
+  const claimed = results[1];
+  return Array.isArray(claimed) && claimed.length > 0;
+}
+
+/**
  * Chunk `items` into D1-safe batches and run each chunk atomically via
  * `runBatch`. Shared by repositories that bulk-insert/update (audit pages,
  * rank snapshots, etc.).

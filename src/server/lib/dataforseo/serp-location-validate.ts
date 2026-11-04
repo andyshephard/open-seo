@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { dataforseoPost } from "@/server/lib/dataforseo/core";
+import {
+  DATAFORSEO_SANDBOX_BASE,
+  dataforseoPost,
+} from "@/server/lib/dataforseo/core";
 import { invalidFieldName } from "@/server/lib/dataforseo/envelope";
 import { AppError } from "@/server/lib/errors";
 
-const DATAFORSEO_SANDBOX_URL = "https://sandbox.dataforseo.com";
 const SANDBOX_TIMEOUT_MS = 10_000;
 
 const sandboxTaskSchema = z.object({
@@ -32,7 +34,7 @@ export function probeSerpLocation(
         depth: 10,
       },
     ],
-    { baseUrl: DATAFORSEO_SANDBOX_URL, signal: options.signal },
+    { baseUrl: DATAFORSEO_SANDBOX_BASE, signal: options.signal },
   ).then((response) => sandboxTaskSchema.parse(response?.tasks?.[0]));
 }
 

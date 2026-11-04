@@ -12,3 +12,4 @@ export * from "./telemetry.schema";
 export * from "./ai-visibility.schema";
 export * from "./local-seo.schema";
 export * from "./research-history.schema";
+export * from "./dataforseo-spend.schema";

@@ -67,6 +67,7 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       OPENSEO_EXPORT_KEY: ${OPENSEO_EXPORT_KEY:-}
+      DATAFORSEO_MONTHLY_CAP_USD: ${DATAFORSEO_MONTHLY_CAP_USD:-}
     volumes: [config:/config, web-config:/web-config]
     depends_on:
       runtime: { condition: service_started }

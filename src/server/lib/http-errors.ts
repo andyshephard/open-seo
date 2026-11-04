@@ -12,6 +12,7 @@ function statusForAppError(code: string): number {
     case "UNKNOWN_LOCATION":
       return 400;
     case "PAYMENT_REQUIRED":
+    case "DATAFORSEO_SPEND_CAP_REACHED":
       return 402;
     default:
       return 500;

@@ -56,6 +56,8 @@ const allowed = [
   "GOOGLE_CLIENT_SECRET",
   // Turns on the research export API with AUTH_MODE=local_noauth.
   "OPENSEO_EXPORT_KEY",
+  // Monthly DataForSEO spend cap in USD (default 25 when unset).
+  "DATAFORSEO_MONTHLY_CAP_USD",
 ];
 config.vars = {
   ...secrets,

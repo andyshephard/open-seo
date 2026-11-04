@@ -3,6 +3,7 @@ import { AppError } from "@/server/lib/errors";
 import type { ErrorCode } from "@/shared/error-codes";
 import { DATAFORSEO_NOT_SET_UP_MESSAGE } from "@/shared/gateway-setup-messages";
 import { getDataforseoFetch } from "@/server/lib/provider-access";
+import { holdDataforseoSpend } from "@/server/lib/dataforseo/spend-cap";
 // No runtime cycle: envelope.ts imports only the DataforseoErrorClassifier
 // type from here.
 import {
@@ -12,6 +13,8 @@ import {
 } from "@/server/lib/dataforseo/envelope";
 
 const API_BASE = "https://api.dataforseo.com";
+/** DataForSEO's free validation host (serp-location-validate.ts). */
+export const DATAFORSEO_SANDBOX_BASE = "https://sandbox.dataforseo.com";
 const MAX_DATAFORSEO_ERROR_PAYLOAD_LENGTH = 1600;
 // Safety ceiling on any live call (Lighthouse is the slowest, ~tens of seconds).
 const DATAFORSEO_REQUEST_TIMEOUT_MS = 60_000;
@@ -210,19 +213,37 @@ async function requestDataforseo<TTask extends DataforseoTaskLike>(
     options.classify,
     options.maxServerErrorRetries,
   );
-  const response = await doFetch(`${options.baseUrl ?? API_BASE}${path}`, {
+  // The monthly spend cap: throws DATAFORSEO_SPEND_CAP_REACHED before any
+  // request that would take this month's spend past it (spend-cap.ts).
+  const spend = await holdDataforseoSpend({
     method,
-    headers: {
-      Accept: "application/json",
-      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
-    },
-    body: method === "POST" ? JSON.stringify(body) : undefined,
-    signal: options.signal,
+    path,
+    body,
+    sandbox: options.baseUrl === DATAFORSEO_SANDBOX_BASE,
   });
-  const text = await response.text();
-  if (text === "") return null;
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the task type is the caller's claim about the payload; billing metadata and item fields are validated downstream (envelope.ts + section Zod schemas)
-  const parsed = JSON.parse(text) as DataforseoResponseLike<TTask>;
+  let parsed: DataforseoResponseLike<TTask> | null;
+  try {
+    const response = await doFetch(`${options.baseUrl ?? API_BASE}${path}`, {
+      method,
+      headers: {
+        Accept: "application/json",
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+      },
+      body: method === "POST" ? JSON.stringify(body) : undefined,
+      signal: options.signal,
+    });
+    const text = await response.text();
+    if (text === "") parsed = null;
+    else {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the task type is the caller's claim about the payload; billing metadata and item fields are validated downstream (envelope.ts + section Zod schemas)
+      parsed = JSON.parse(text) as DataforseoResponseLike<TTask>;
+    }
+  } catch (error) {
+    await spend.fail(error);
+    throw error;
+  }
+  await spend.settle(parsed);
+  if (parsed === null) return null;
   warnIfUpstreamResponseFailed(parsed, path);
   return parsed;
 }
@@ -251,7 +272,7 @@ export function dataforseoPost<
  * gates its multi-MB body reads behind a parse lock in the audit worker, and
  * passes its own `signal` so the timeout can be cleared once headers arrive.
  */
-export function dataforseoPostResponse(
+export async function dataforseoPostResponse(
   path: string,
   tasks: unknown[],
   options: DataforseoRequestOptions & { signal?: AbortSignal } = {},
@@ -260,12 +281,30 @@ export function dataforseoPostResponse(
     options.classify,
     options.maxServerErrorRetries,
   );
-  return doFetch(`${API_BASE}${path}`, {
+  const spend = await holdDataforseoSpend({
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(tasks),
-    signal: options.signal,
+    path,
+    body: tasks,
   });
+  let response: Response;
+  try {
+    response = await doFetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(tasks),
+      signal: options.signal,
+    });
+  } catch (error) {
+    await spend.fail(error);
+    throw error;
+  }
+  // The body is read later under the caller's parse lock, so this books the
+  // estimate (pricing.ts prices Lighthouse above its billed cost).
+  await spend.settleAtEstimate();
+  return response;
 }
 
 /** GET a DataForSEO endpoint (task_get collection, appendix/locations data). */

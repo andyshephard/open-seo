@@ -27,6 +27,8 @@
     "src/db/app.schema.ts",
     "src/db/better-auth-schema.ts",
     "src/db/pg/schema.ts",
+    // Vitest setup file (vite.config.ts test.setupFiles)
+    "src/server/lib/dataforseo/spend-cap.vitest-setup.ts",
     // Standalone CLI/dev scripts, invoked via package.json scripts
     "scripts/**",
     // shadcn components are copied in whole; pages use only some exports
