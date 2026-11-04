@@ -32,6 +32,7 @@ import {
 import { sweepDubReferredOrganizations } from "@/server/referrals/dub";
 import { maybeSendSelfHostHeartbeat } from "@/server/lib/self-host-telemetry";
 import { EXPORT_PATH_PREFIX } from "@/shared/research-export";
+import { runAsDataforseoCaller } from "@/server/lib/dataforseo/spend-caller";
 import { handleOperatorRequest } from "@/server/standalone/admin";
 import { handleImport, isLegacyImportActive } from "@/server/standalone/import";
 import { hasOperatorSecret } from "@/server/standalone/operator-auth";
@@ -134,9 +135,15 @@ function fetch(
 ): Promise<Response> {
   // Scope a per-request Postgres client (no-op in D1 mode). The client isn't
   // closed here — the Workers↔Hyperdrive socket is reclaimed at invocation end.
-  // The DataForSEO cap is per request too, matching the connection limit.
-  return withPgClient(() =>
-    withDataforseoSlots(() => Promise.resolve(handleFetch(request, env, ctx))),
+  // DataForSEO spend made while serving a request is booked to "app" unless
+  // an MCP tool call names itself (spend-caller.ts). The DataForSEO slot cap
+  // is per request too, matching the connection limit.
+  return runAsDataforseoCaller("app", () =>
+    withPgClient(() =>
+      withDataforseoSlots(() =>
+        Promise.resolve(handleFetch(request, env, ctx)),
+      ),
+    ),
   );
 }
 
@@ -255,8 +262,7 @@ export { SamChatAgent } from "./server/features/sam/SamChatAgent";
 // Daily OAuth KV garbage collection; must match a trigger in wrangler.jsonc.
 const MCP_OAUTH_PURGE_CRON = "17 3 * * *";
 
-export default {
-  fetch,
+const cron = {
   async scheduled(
     controller: ScheduledController,
     env: Env,
@@ -274,6 +280,18 @@ export default {
         });
       } catch (err) {
         console.error("[cron] Search history sync failed:", err);
+      }
+      // DataForSEO spend cap upkeep (also run every 5 minutes, below) and
+      // ledger retention.
+      try {
+        const { pruneDataforseoSpendLedger, sweepDataforseoSpend } =
+          await import("@/server/lib/dataforseo/spend-ledger");
+        await withPgClient(async () => {
+          await sweepDataforseoSpend();
+          await pruneDataforseoSpendLedger();
+        });
+      } catch (err) {
+        console.error("[cron] DataForSEO spend ledger prune failed:", err);
       }
       // Expired provider cache objects, in every mode: the standalone bucket
       // has no lifecycle rules to remove them.
@@ -328,6 +346,17 @@ export default {
       return;
     }
 
+    // DataForSEO spend cap upkeep: book holds whose call never settled and
+    // recompute the month totals from the ledger. Its failure must not stop
+    // the rank checks.
+    try {
+      const { sweepDataforseoSpend } =
+        await import("@/server/lib/dataforseo/spend-ledger");
+      await withPgClient(() => sweepDataforseoSpend());
+    } catch (err) {
+      console.error("[cron] DataForSEO spend sweep failed:", err);
+    }
+
     // Watchdog first: reconcile audits stuck in "running" whose workflow died
     // without reaching mark-failed (OOM/CPU kills, expired instances). Runs
     // before the rank loop so a slow tick can't delay or starve it. Its
@@ -361,5 +390,15 @@ export default {
     for (const result of checks)
       if (result.status === "rejected") throw result.reason;
     if (watchdogError) throw watchdogError;
+  },
+};
+
+export default {
+  fetch,
+  // DataForSEO spend the scheduled handler makes is booked to "cron".
+  scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    return runAsDataforseoCaller("cron", () =>
+      cron.scheduled(controller, env, ctx),
+    );
   },
 };

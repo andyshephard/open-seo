@@ -21,6 +21,7 @@ import {
   buildGuestSignUpUrl,
   GUEST_SIGN_UP_NOTE,
 } from "@/server/mcp/urls";
+import { runAsDataforseoCaller } from "@/server/lib/dataforseo/spend-caller";
 import { BILLING_ROUTE } from "@/shared/billing";
 
 type ToolHandler<TArgs> = (
@@ -135,6 +136,11 @@ export function instrumentMcpToolInput(
   };
 }
 
+/** The tool and its client, as the DataForSEO spend ledger names the caller. */
+function spendCallerLabel(toolName: string, context: ToolContext) {
+  return `mcp:${toolName} (${context.auth.clientLabel ?? "first-party"})`;
+}
+
 /**
  * Wraps an MCP tool handler so failures reach PostHog. Unlike TanStack server
  * functions (covered by errorHandlingMiddleware), the MCP route has no error
@@ -156,7 +162,11 @@ export function instrumentMcpToolHandler<TArgs>(
   return async (args, context) => {
     const startedAt = performance.now();
     try {
-      const result = await handler(args, context);
+      // Books the tool's DataForSEO spend to it on the spend ledger.
+      const result = await runAsDataforseoCaller(
+        spendCallerLabel(toolName, context),
+        () => handler(args, context),
+      );
       // The SDK converts an output-schema mismatch into a client-visible
       // JSON-RPC error, so count it as a failed call, not a success.
       let outputValidationFailed = false;

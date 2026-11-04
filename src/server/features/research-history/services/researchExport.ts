@@ -10,6 +10,7 @@ import {
 import { ResearchArchiveRepository } from "../repositories/ResearchArchiveRepository";
 import { EXPORT_PATH_PREFIX } from "@/shared/research-export";
 import { authenticateExportRequest } from "./exportAuth";
+import { readDataforseoSpend } from "@/server/lib/dataforseo/spend-ledger";
 
 // Read-only, incremental export of the research history tables, for loading
 // into a warehouse. OpenSEO only stores the data; analysis happens downstream.
@@ -17,6 +18,7 @@ import { authenticateExportRequest } from "./exportAuth";
 //   GET /api/export/projects
 //   GET /api/export/{table}?projectId=&since=&limit=   (and table "deletions")
 //   GET /api/export/research_archive_entries/{id}/payload?projectId=
+//   GET /api/export/dataforseo-spend[?month=YYYY-MM]   (JSON, see below)
 //
 // Table pages are NDJSON, one row per line with the table's SQL column names.
 // Rows come in (written_at, key) order; `X-Next-Cursor` is the position after
@@ -191,6 +193,23 @@ async function exportArchivePayload(
   });
 }
 
+// The deployment's DataForSEO spend against its monthly cap (spend-cap.ts):
+// month-to-date spend, cap, remaining and per-caller counts. Authenticated
+// exactly as every other export path (authenticateExportRequest in
+// handleResearchExport). The figures are deployment-wide, not per
+// organization: in the account modes any organization's export key reads them.
+async function exportDataforseoSpend(url: URL) {
+  const month = url.searchParams.get("month") ?? undefined;
+  if (month !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+    return jsonError(400, "invalid_request", "month must be YYYY-MM.");
+  return new Response(JSON.stringify(await readDataforseoSpend(month)), {
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 export async function handleResearchExport(request: Request) {
   if (request.method !== "GET")
     return jsonError(405, "method_not_allowed", "Use GET.");
@@ -202,6 +221,8 @@ export async function handleResearchExport(request: Request) {
     const url = new URL(request.url);
     // Table names and archive ids are plain ASCII, so no decoding.
     const segments = url.pathname.slice(EXPORT_PATH_PREFIX.length).split("/");
+    if (segments.length === 1 && segments[0] === "dataforseo-spend")
+      return await exportDataforseoSpend(url);
     if (segments.length === 1 && segments[0] === "projects")
       return ndjsonResponse(await repo.listProjects(organizationId), {});
     const table = tableNameSchema.safeParse(segments[0]);

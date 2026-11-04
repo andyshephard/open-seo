@@ -4,6 +4,7 @@ import { z } from "zod";
 import { instrumentMcpToolHandler } from "./instrumentation";
 import { type ToolAuthContext, type ToolContext } from "@/server/mcp/context";
 import { AppError } from "@/server/lib/errors";
+import { currentDataforseoCaller } from "@/server/lib/dataforseo/spend-caller";
 
 const mocks = vi.hoisted(() => ({
   captureServerError: vi.fn(),
@@ -53,6 +54,40 @@ const authContext: ToolAuthContext = {
 const toolContext: ToolContext = { auth: authContext };
 
 describe("instrumentMcpToolHandler", () => {
+  it("books the tool's DataForSEO spend to the tool and its client", async () => {
+    let caller = "";
+    const wrapped = instrumentMcpToolHandler(
+      "get_keyword_metrics",
+      undefined,
+      async () => {
+        caller = currentDataforseoCaller();
+        return okResult({ items: [] });
+      },
+    );
+
+    await wrapped(
+      {},
+      { auth: { ...authContext, clientLabel: "seoSnapshotSync" } },
+    );
+
+    expect(caller).toBe("mcp:get_keyword_metrics (seoSnapshotSync)");
+    expect(currentDataforseoCaller()).toBe("background");
+  });
+
+  it("passes the spend cap refusal through to the agent unchanged", async () => {
+    const refusal = new AppError(
+      "DATAFORSEO_SPEND_CAP_REACHED",
+      "DataForSEO monthly cap reached ($25.00 of $25).",
+    );
+    const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () => {
+      throw refusal;
+    });
+
+    await expect(wrapped({}, toolContext)).rejects.toBe(refusal);
+    // Expected and self-explanatory: not captured as an exception.
+    expect(mocks.captureServerError).not.toHaveBeenCalled();
+  });
+
   it("reports an output schema mismatch the SDK would silently reject and marks the usage failed", async () => {
     const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () =>
       okResult({ items: "not-an-array" }),

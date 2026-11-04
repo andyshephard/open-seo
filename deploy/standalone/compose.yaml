@@ -70,6 +70,7 @@ services:
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       CRAWLER_ACCESS_SECRET: ${CRAWLER_ACCESS_SECRET:-}
       OPENSEO_EXPORT_KEY: ${OPENSEO_EXPORT_KEY:-}
+      DATAFORSEO_MONTHLY_CAP_USD: ${DATAFORSEO_MONTHLY_CAP_USD:-}
     volumes: [config:/config, web-config:/web-config]
     depends_on:
       runtime: { condition: service_started }

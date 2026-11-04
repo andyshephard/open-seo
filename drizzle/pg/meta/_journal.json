@@ -379,6 +379,13 @@
       "when": 1794860682445,
       "tag": "0053_export_deletions",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794860683445,
+      "tag": "0054_dataforseo_spend",
+      "breakpoints": true
     }
   ]
 }
