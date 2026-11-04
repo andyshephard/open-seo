@@ -105,7 +105,8 @@
     },
   ],
   "triggers": {
-    // Every 5 min: rank checks + stale-audit reconcile. Daily: OAuth KV GC.
+    // Every 5 min: rank checks + stale-audit reconcile. Daily: OAuth KV GC,
+    // Search Console history sync, expired provider-cache sweep.
     // Dispatched on controller.cron in src/server.ts `scheduled`.
     "crons": ["*/5 * * * *", "17 3 * * *"],
   },

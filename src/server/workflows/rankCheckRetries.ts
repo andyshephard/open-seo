@@ -7,6 +7,7 @@ import {
 } from "@/shared/rank-tracking";
 import { pgStep } from "@/server/workflows/pgStep";
 import {
+  archiveSerps,
   COLLECT_STEP_CONFIG,
   expandToTaskInputs,
   mapResultsToSnapshotRows,
@@ -171,7 +172,15 @@ export async function retryRankChecks(
       `[rank-check] ${ctx.runId} read ${read}: ${toRead.length} check(s)`,
     );
     const label = `read-${read}-`;
-    const collected = await runQueuedTasks(step, ctx, toRead, label);
+    // Each read's results page is archived as it's collected; the step
+    // output keeps only positions.
+    const collected = await runQueuedTasks(
+      step,
+      ctx,
+      toRead,
+      label,
+      (results) => archiveSerps(ctx, results),
+    );
     const readPairs = pairs;
     ({ pairs, canReadAgain } = await pgStep(
       step,

@@ -1,4 +1,8 @@
 import { DashboardCacheService } from "@/server/features/dashboard/services/DashboardCacheService";
+import {
+  deleteGa4Copies,
+  deleteSearchConsoleCopies,
+} from "@/server/features/research-history/services/googleDataErasure";
 import { GA4_OAUTH_PROVIDER_ID } from "@/shared/ga4";
 import { GSC_OAUTH_PROVIDER_ID } from "@/shared/gsc";
 import { GoogleAccountRepository } from "./GoogleAccountRepository";
@@ -48,13 +52,22 @@ async function remove(input: AccountInput) {
       input.provider === "gsc" ? GSC_OAUTH_PROVIDER_ID : GA4_OAUTH_PROVIDER_ID,
     accountId: input.accountId,
   });
-  const gscProjectIds =
-    input.provider === "gsc"
-      ? await GoogleAccountRepository.listGscProjectIds(input)
-      : [];
+  const projectIds = await GoogleAccountRepository.listProjectIds(input);
+  const deleteCopies = async () => {
+    for (const projectId of projectIds) {
+      if (input.provider === "gsc") await deleteSearchConsoleCopies(projectId);
+      else await deleteGa4Copies(projectId);
+    }
+  };
+  // The projects' stored copies go first: once the mappings are removed, a
+  // retry after a failure here could no longer find these projects. Then
+  // again after, for anything an in-flight sync wrote in between.
+  await deleteCopies();
   await GoogleAccountRepository.remove(input);
-  for (const projectId of gscProjectIds)
-    await DashboardCacheService.deleteGscCache(projectId);
+  await deleteCopies();
+  if (input.provider === "gsc")
+    for (const projectId of projectIds)
+      await DashboardCacheService.deleteGscCache(projectId);
   await revokeIfLastGrant(input.accountId, token);
   return { removed: true as const };
 }

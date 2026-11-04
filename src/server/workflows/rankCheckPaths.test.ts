@@ -1,15 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowStep } from "cloudflare:workers";
 import type { RankCheckTaskInput } from "@/server/lib/dataforseo";
+import { runQueuedCheck, runQueuedTasks } from "./rankCheckPaths";
 import { retryRankChecks } from "./rankCheckRetries";
 
 const mocks = vi.hoisted(() => ({
   getSnapshotsForRun: vi.fn(),
   getBestPositionsForKeywords: vi.fn(),
+  insertSnapshots: vi.fn(),
+  updateRun: vi.fn(),
   upsertSnapshots: vi.fn(),
   deleteNotFoundSnapshots: vi.fn(),
   fetchRankCheckTaskResult: vi.fn(),
   rankCheckTaskPost: vi.fn(),
+  archiveLookup: vi.fn(),
+  getCachedEntry: vi.fn(),
+  setCached: vi.fn(),
 }));
 
 vi.mock(
@@ -19,6 +25,16 @@ vi.mock(
 vi.mock("@/server/lib/dataforseo", () => ({
   fetchRankCheckTaskResult: mocks.fetchRankCheckTaskResult,
   MAX_TASKS_PER_POST: 100,
+}));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: mocks.archiveLookup,
+}));
+vi.mock("@/server/lib/r2-cache", () => ({
+  buildCacheKey: async (_prefix: string, parts: { keyword: string }) =>
+    `rank-serp:${parts.keyword}`,
+  getCachedEntry: mocks.getCachedEntry,
+  setCached: mocks.setCached,
+  RESEARCH_FRESHNESS_SECONDS: { serp: 86_400 },
 }));
 vi.mock("@/server/workflows/pgStep", () => ({
   pgStep: (
@@ -39,6 +55,13 @@ function checkContext(
   return {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the check paths only call this serp method
     client: { serp: { rankCheckTaskPost: mocks.rankCheckTaskPost } } as never,
+    billingCustomer: {
+      userId: "user_1",
+      userEmail: "owner@example.com",
+      organizationId: "org_1",
+      projectId: "project_1",
+    },
+    configId: "config_1",
     keywords: keywordIds.map((id) => ({ id, keyword: `keyword ${id}` })),
     devices,
     serpDepth: 10,
@@ -70,6 +93,8 @@ function retry(ctx: ReturnType<typeof checkContext>, readsEndAt = Infinity) {
 }
 
 beforeEach(() => {
+  mocks.getCachedEntry.mockResolvedValue(null);
+  mocks.setCached.mockResolvedValue(undefined);
   mocks.rankCheckTaskPost.mockImplementation(
     async ({ tasks }: { tasks: RankCheckTaskInput[] }) =>
       tasks.map((task) => ({ ...task, taskId: `task_${task.keywordId}` })),
@@ -84,6 +109,89 @@ beforeEach(() => {
     { trackingKeywordId: "kw_0", position: 1 },
     { trackingKeywordId: "kw_never", position: null },
   ]);
+});
+
+describe("shared results pages", () => {
+  it("answers a pair from a page another tracker bought today without a paid check", async () => {
+    mocks.getCachedEntry.mockImplementation(async (key: string) =>
+      key === "rank-serp:keyword kw_0"
+        ? {
+            value: {
+              depth: 10,
+              items: [
+                {
+                  type: "organic",
+                  rankGroup: 4,
+                  rankAbsolute: 6,
+                  domain: "www.openseo.so",
+                  url: "https://www.openseo.so/",
+                  title: "OpenSEO",
+                },
+              ],
+            },
+          }
+        : null,
+    );
+
+    await runQueuedCheck(step, checkContext(["kw_0", "kw_1"]));
+
+    expect(mocks.insertSnapshots).toHaveBeenCalledWith([
+      expect.objectContaining({ trackingKeywordId: "kw_0", position: 4 }),
+    ]);
+    expect(mocks.rankCheckTaskPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tasks: [expect.objectContaining({ keywordId: "kw_1" })],
+      }),
+    );
+  });
+});
+
+describe("runQueuedTasks", () => {
+  it("archives each collected results page and keeps it out of the step output", async () => {
+    const page = [
+      {
+        type: "organic",
+        rankGroup: 1,
+        rankAbsolute: 1,
+        domain: "openseo.so",
+        url: "https://openseo.so/",
+        title: "OpenSEO",
+      },
+    ];
+    mocks.fetchRankCheckTaskResult.mockImplementationOnce(
+      async (task: RankCheckTaskInput) => ({
+        status: "completed",
+        result: {
+          ...task,
+          position: 1,
+          url: null,
+          serpFeatures: [],
+          serpItems: page,
+        },
+      }),
+    );
+    const archived: unknown[] = [];
+    const taskIds: unknown[] = [];
+
+    const collected = await runQueuedTasks(
+      step,
+      checkContext(["kw_0"]),
+      [{ keyword: "keyword kw_0", keywordId: "kw_0", device: "desktop" }],
+      "",
+      async (results) => {
+        archived.push(...results.map((result) => result.serpItems));
+        taskIds.push(...results.map((result) => result.taskId));
+      },
+    );
+
+    expect(archived).toEqual([page]);
+    // The archive keys each entry on it, so a retried collect step re-records
+    // the same entry instead of a duplicate.
+    expect(taskIds).toEqual(["task_kw_0"]);
+    expect(collected).toEqual([
+      expect.objectContaining({ keywordId: "kw_0", serpItems: [] }),
+    ]);
+  });
 });
 
 describe("retryRankChecks", () => {

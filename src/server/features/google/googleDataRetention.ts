@@ -9,8 +9,14 @@ const PURGE_TIME_BUDGET_MS = 8 * 60 * 1000;
 
 /**
  * Daily cron body: drops Google grants no project uses any more, as the
- * privacy policy promises. Cached Google reports expire on their own: the
- * bucket's `dataforseo-cache/` lifecycle rule deletes them after 7 days.
+ * privacy policy promises. Cached Google reports (the dashboard's last-good
+ * Search Console copy) are kept until their 90-day expiresAt: the daily cache
+ * sweep (r2-cache-sweep.ts) deletes them once expired, and on Cloudflare the
+ * bucket's 90-day `dataforseo-cache/` lifecycle rule is a backstop.
+ * Disconnecting Search Console (or removing its Google account, or switching
+ * the project to another property) deletes that cache and the stored Search
+ * Console history at once; doing so for GA4 deletes the archived GA4 reports.
+ * GA4 has no dashboard cache.
  */
 export async function purgeUnusedGoogleData(now = new Date()) {
   const googleGrants = await GoogleAccountService.purgeUnusedGrants(

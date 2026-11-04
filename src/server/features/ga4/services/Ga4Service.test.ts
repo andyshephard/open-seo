@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => {
     })),
     upsert: vi.fn(),
     getByProjectId: vi.fn(),
+    deleteByProjectId: vi.fn(),
+    deleteGa4Copies: vi.fn(),
   };
 });
 
@@ -43,12 +45,77 @@ vi.mock("@/server/features/ga4/repositories/Ga4ConnectionRepository", () => ({
   Ga4ConnectionRepository: {
     upsert: mocks.upsert,
     getByProjectId: mocks.getByProjectId,
+    deleteByProjectId: mocks.deleteByProjectId,
   },
 }));
+vi.mock(
+  "@/server/features/research-history/services/googleDataErasure",
+  () => ({ deleteGa4Copies: mocks.deleteGa4Copies }),
+);
+
+function ga4Connected(propertyId: string, ga4AccountId: string) {
+  return {
+    projectId: "p1",
+    propertyId,
+    ga4AccountId,
+    connectedByUserId: "u1",
+  };
+}
 
 describe("Ga4Service", () => {
   beforeEach(() => {
     mocks.state.grants = [{ id: "grant-a", accountId: "sub-a" }];
+    mocks.getByProjectId.mockResolvedValue(null);
+    mocks.deleteGa4Copies.mockClear();
+  });
+
+  describe("switching property", () => {
+    const input = {
+      projectId: "p1",
+      organizationId: "org1",
+      propertyId: "properties/11",
+      accountId: "sub-a",
+      userId: "u1",
+    };
+    beforeEach(() => {
+      mocks.listProperties.mockResolvedValue([
+        { propertyId: "properties/11", displayName: "A" },
+      ]);
+      mocks.getProperty.mockResolvedValue({
+        name: "properties/11",
+        displayName: "A",
+        timeZone: "UTC",
+        currencyCode: "USD",
+      });
+      mocks.upsert.mockResolvedValue({ propertyId: "properties/11" });
+    });
+
+    it("keeps the stored reports when re-picking the same property", async () => {
+      mocks.getByProjectId.mockResolvedValue(
+        ga4Connected("properties/11", "sub-a"),
+      );
+
+      await Ga4Service.setProperty(input);
+
+      expect(mocks.deleteGa4Copies).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["another property", "properties/22", "sub-a"],
+      ["another Google account", "properties/11", "sub-b"],
+    ])(
+      "deletes the stored reports before switching to %s",
+      async (_l, p, a) => {
+        mocks.getByProjectId.mockResolvedValue(ga4Connected(p, a));
+
+        await Ga4Service.setProperty(input);
+
+        expect(mocks.deleteGa4Copies).toHaveBeenCalledWith("p1");
+        expect(mocks.deleteGa4Copies.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.upsert.mock.invocationCallOrder.at(-1) ?? 0,
+        );
+      },
+    );
   });
 
   it("verifies a freshly discovered property before persisting metadata", async () => {
@@ -159,5 +226,17 @@ describe("Ga4Service", () => {
       status: 403,
     });
     consoleError.mockRestore();
+  });
+});
+
+describe("Ga4Service.disconnect", () => {
+  it("deletes the stored GA4 reports before and after the connection", async () => {
+    mocks.deleteGa4Copies.mockClear();
+    await Ga4Service.disconnect({ projectId: "p1" });
+
+    const [first, second] = mocks.deleteGa4Copies.mock.invocationCallOrder;
+    const unmapped = mocks.deleteByProjectId.mock.invocationCallOrder[0];
+    expect(first).toBeLessThan(unmapped);
+    expect(second).toBeGreaterThan(unmapped);
   });
 });

@@ -4,6 +4,7 @@ import {
   DEFAULT_BACKLINKS_PAGE_SIZE,
   backlinksSearchSchema,
 } from "@/types/schemas/backlinks";
+import { ArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { defaultScopeForInput } from "@/shared/researchScope";
 import { pageHead } from "@/client/lib/pageHead";
 
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/_app/p/$projectId/backlinks")({
 function BacklinksRoute() {
   const { projectId } = Route.useParams();
   const navigate = useNavigate({ from: Route.fullPath });
+  const search = Route.useSearch();
   const {
     target = "",
     scope: rawScope,
@@ -26,25 +28,42 @@ function BacklinksRoute() {
     order,
     view,
     includeSpam,
-  } = Route.useSearch();
+    asOf,
+  } = search;
   const scope = rawScope ?? defaultScopeForInput(target);
 
   return (
-    <BacklinksPage
+    <ArchiveView
       projectId={projectId}
-      navigate={navigate}
-      searchState={{
-        target,
-        scope,
-        // Referring domains can't be filtered to a subfolder.
-        tab: scope === "subfolder" && tab === "domains" ? "backlinks" : tab,
-        page,
-        pageSize: size,
-        sort,
-        order,
-        view,
-        includeSpam,
-      }}
-    />
+      kinds={[
+        "backlinks_overview",
+        "backlinks_rows",
+        "backlinks_referring_domains",
+        "backlinks_top_pages",
+      ]}
+      target={target}
+      viewKey={JSON.stringify(search)}
+      asOf={asOf}
+      onAsOfChange={(next) =>
+        void navigate({ search: (prev) => ({ ...prev, asOf: next }) })
+      }
+    >
+      <BacklinksPage
+        projectId={projectId}
+        navigate={navigate}
+        searchState={{
+          target,
+          scope,
+          // Referring domains can't be filtered to a subfolder.
+          tab: scope === "subfolder" && tab === "domains" ? "backlinks" : tab,
+          page,
+          pageSize: size,
+          sort,
+          order,
+          view,
+          includeSpam,
+        }}
+      />
+    </ArchiveView>
   );
 }

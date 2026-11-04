@@ -6,6 +6,7 @@ import { createGa4AdminClient } from "@/server/lib/ga4Client";
 import { Ga4AdminApiError, Ga4TokenError } from "@/server/lib/ga4Errors";
 import { GA4_OAUTH_PROVIDER_ID } from "@/shared/ga4";
 import { getGoogleAccessMode } from "@/server/features/google/googleAccess";
+import { deleteGa4Copies } from "@/server/features/research-history/services/googleDataErasure";
 import {
   GATEWAY_GOOGLE_ACCOUNT_ID,
   getGatewayGoogleStatus,
@@ -136,7 +137,18 @@ async function setProperty(input: {
     connectedAccountEmail = null;
   }
 
-  return Ga4ConnectionRepository.upsert({
+  // Another property's (or Google account's) stored reports must not mix with
+  // this one's: drop them, so the next sync backfills the new property.
+  const existing = await Ga4ConnectionRepository.getByProjectId(
+    input.projectId,
+  );
+  const switching =
+    existing !== null &&
+    (existing.propertyId !== property.name ||
+      existing.ga4AccountId !== input.accountId ||
+      existing.connectedByUserId !== input.userId);
+  if (switching) await deleteGa4Copies(input.projectId);
+  const connection = await Ga4ConnectionRepository.upsert({
     projectId: input.projectId,
     organizationId: input.organizationId,
     propertyId: property.name,
@@ -147,10 +159,19 @@ async function setProperty(input: {
     ga4AccountId: input.accountId,
     connectedAccountEmail,
   });
+  // A sync of the old property that was already writing stops at its next
+  // write; this clears anything it wrote before then.
+  if (switching) await deleteGa4Copies(input.projectId);
+  return connection;
 }
 
 async function disconnect(input: { projectId: string }): Promise<void> {
+  // Copies first, so a failed delete leaves a connection to disconnect again;
+  // then again after, for anything an in-flight sync wrote in between (a
+  // sync stops at its next write once the connection is gone).
+  await deleteGa4Copies(input.projectId);
   await Ga4ConnectionRepository.deleteByProjectId(input.projectId);
+  await deleteGa4Copies(input.projectId);
 }
 
 export const Ga4Service = {

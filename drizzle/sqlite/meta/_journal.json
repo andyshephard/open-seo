@@ -484,6 +484,55 @@
       "when": 1793950088872,
       "tag": "0068_guest_claimed_by",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1794860675944,
+      "tag": "0069_early_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "6",
+      "when": 1794860676944,
+      "tag": "0070_mushy_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1794860677944,
+      "tag": "0071_sticky_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1794860678944,
+      "tag": "0072_hot_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1794860679944,
+      "tag": "0073_robust_cloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1794860680944,
+      "tag": "0074_export_written_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1794860681944,
+      "tag": "0075_export_deletions",
+      "breakpoints": true
     }
   ]
 }

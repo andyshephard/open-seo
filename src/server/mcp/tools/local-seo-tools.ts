@@ -15,7 +15,20 @@ import {
   type LocalSerpTaskOutcome,
 } from "@/server/lib/dataforseo";
 import { AppError } from "@/server/lib/errors";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  buildCacheKey,
+  getCached,
+  RESEARCH_FRESHNESS_SECONDS,
+  setCached,
+} from "@/server/lib/r2-cache";
+import {
+  cachedLookup,
+  readCachedLookup,
+  recallLookupTask,
+  rememberLookupTask,
+  storeLookupResult,
+  type LookupRequest,
+} from "@/server/features/research-history/services/cachedLookup";
 import { buildProjectMeta } from "@/server/mcp/context";
 import { mcpResponse } from "@/server/mcp/formatters";
 import {
@@ -24,6 +37,7 @@ import {
 } from "@/server/mcp/output-schemas";
 import { withMcpProjectAuth } from "@/server/mcp/project-auth";
 import {
+  freshnessInputSchema,
   languageCodeSchema,
   locationCodeSchema,
   projectIdSchema,
@@ -133,6 +147,7 @@ const getBusinessProfileInputSchema = {
   projectId: projectIdSchema,
   ...businessIdentifierInputSchema,
   ...businessLocationInputSchema,
+  ...freshnessInputSchema,
 } as const;
 
 type GetBusinessProfileArgs = z.infer<
@@ -241,10 +256,28 @@ export const getBusinessProfileTool = {
   handler: withMcpProjectAuth(async (args: GetBusinessProfileArgs, context) => {
     const identifier = resolveBusinessIdentifier(args);
     const client = createDataforseoClient(context.billing);
-    const profile = await client.business.myBusinessInfo({
-      keyword: businessIdentifierKeyword(identifier),
-      ...resolveBusinessLocation(args, context.project),
-    });
+    const location = resolveBusinessLocation(args, context.project);
+    const { value: profile } = await cachedLookup(
+      context.billing,
+      {
+        kind: "business_profile",
+        target: businessIdentifierKeyword(identifier),
+        params: location,
+        ttlSeconds: RESEARCH_FRESHNESS_SECONDS.local,
+        schema:
+          z.custom<
+            Awaited<ReturnType<typeof client.business.myBusinessInfo>>
+          >(),
+        isEmpty: (value) => !value,
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
+      },
+      () =>
+        client.business.myBusinessInfo({
+          keyword: businessIdentifierKeyword(identifier),
+          ...location,
+        }),
+    );
 
     return mcpResponse({
       text: profile
@@ -259,6 +292,49 @@ export const getBusinessProfileTool = {
 // ---------------------------------------------------------------------------
 // get_business_reviews
 // ---------------------------------------------------------------------------
+
+const reviewsLookupOptions = {
+  ttlSeconds: RESEARCH_FRESHNESS_SECONDS.local,
+  schema: z.record(z.string(), z.unknown()).nullable(),
+  isEmpty: (value: Record<string, unknown> | null) => !value,
+};
+
+function reviewsResponse(
+  context: Parameters<typeof buildProjectMeta>[0],
+  projectId: string,
+  taskId: string,
+  result: Record<string, unknown> | null,
+) {
+  const reviews = resultItems(result).map((row) =>
+    pickRowFields(row, REVIEW_ROW_FIELDS),
+  );
+  const totals = result
+    ? {
+        title: result.title ?? null,
+        reviews_count: result.reviews_count ?? null,
+        rating: result.rating ?? null,
+        cid: result.cid ?? null,
+        place_id: result.place_id ?? null,
+      }
+    : null;
+
+  const header = `Collected ${reviews.length} reviews${typeof totals?.reviews_count === "number" ? ` of ${totals.reviews_count} total` : ""}.`;
+  return mcpResponse({
+    text:
+      reviews.length === 0
+        ? result
+          ? `${header} This profile has no reviews matching the request.`
+          : `${header} Google returned nothing for this business: either it has no reviews or the identifier didn't match a profile. Confirm the business with get_business_profile, or pass its cid.`
+        : `${header} Reviews longer than 300 characters and owner replies longer than 200 end in "…" (full text in structuredContent).\n${formatMcpTable(reviews, REVIEW_COLUMNS)}`,
+    meta: buildProjectMeta(context, projectId, `/p/${projectId}`),
+    structuredContent: {
+      status: "completed",
+      taskId: taskId,
+      reviews,
+      totals,
+    },
+  });
+}
 
 const getBusinessReviewsInputSchema = {
   projectId: projectIdSchema,
@@ -293,6 +369,7 @@ const getBusinessReviewsInputSchema = {
     .describe(
       'Resume a previous call that returned status "processing". Pass back the taskId exactly as returned (format "google:<id>" or "extended:<id>"); it selects the right endpoint on its own. Resuming charges no extra credits.',
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type GetBusinessReviewsArgs = z.infer<
@@ -395,11 +472,31 @@ export const getBusinessReviewsTool = {
     let task: { endpoint: BusinessTaskEndpoint; taskId: string };
     let publicTaskId: string;
 
+    let request: LookupRequest | null = null;
     if (args.taskId) {
       task = parseReviewsTaskId(args.taskId);
       publicTaskId = args.taskId;
+      request = await recallLookupTask(context.billing, args.taskId);
     } else {
       const identifier = resolveBusinessIdentifier(args);
+      request = {
+        kind: "business_reviews",
+        target: businessIdentifierKeyword(identifier),
+        params: {
+          ...resolveBusinessLocation(args, context.project),
+          depth: args.depth ?? 20,
+          sortBy: args.sortBy ?? "newest",
+          includeOtherSources,
+        },
+      };
+      const stored = await readCachedLookup(context.billing, {
+        ...request,
+        ...reviewsLookupOptions,
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
+      });
+      if (stored)
+        return reviewsResponse(context, args.projectId, "", stored.value);
       const client = createDataforseoClient(context.billing);
       // Only the post is metered; the polling below collects for free.
       const postedId = await client.business.reviewsTaskPost({
@@ -415,6 +512,7 @@ export const getBusinessReviewsTool = {
         taskId: postedId,
       };
       publicTaskId = encodeReviewsTaskId(includeOtherSources, postedId);
+      await rememberLookupTask(context.billing, publicTaskId, request);
     }
 
     const outcome = await pollBusinessTask(task, publicTaskId);
@@ -426,41 +524,46 @@ export const getBusinessReviewsTool = {
       });
     }
 
-    const reviews = resultItems(outcome.result).map((row) =>
-      pickRowFields(row, REVIEW_ROW_FIELDS),
+    if (request)
+      await storeLookupResult(
+        context.billing,
+        { ...request, ...reviewsLookupOptions },
+        outcome.result,
+      );
+    return reviewsResponse(
+      context,
+      args.projectId,
+      publicTaskId,
+      outcome.result,
     );
-    const totals = outcome.result
-      ? {
-          title: outcome.result.title ?? null,
-          reviews_count: outcome.result.reviews_count ?? null,
-          rating: outcome.result.rating ?? null,
-          cid: outcome.result.cid ?? null,
-          place_id: outcome.result.place_id ?? null,
-        }
-      : null;
-
-    const header = `Collected ${reviews.length} reviews${typeof totals?.reviews_count === "number" ? ` of ${totals.reviews_count} total` : ""}.`;
-    return mcpResponse({
-      text:
-        reviews.length === 0
-          ? outcome.result
-            ? `${header} This profile has no reviews matching the request.`
-            : `${header} Google returned nothing for this business: either it has no reviews or the identifier didn't match a profile. Confirm the business with get_business_profile, or pass its cid.`
-          : `${header} Reviews longer than 300 characters and owner replies longer than 200 end in "…" (full text in structuredContent).\n${formatMcpTable(reviews, REVIEW_COLUMNS)}`,
-      meta: buildProjectMeta(context, args.projectId, `/p/${args.projectId}`),
-      structuredContent: {
-        status: "completed",
-        taskId: publicTaskId,
-        reviews,
-        totals,
-      },
-    });
   }),
 };
 
 // ---------------------------------------------------------------------------
 // get_business_updates
 // ---------------------------------------------------------------------------
+
+function updatesResponse(
+  context: Parameters<typeof buildProjectMeta>[0],
+  projectId: string,
+  taskId: string,
+  result: Record<string, unknown> | null,
+) {
+  const updates = resultItems(result).map((row) =>
+    pickRowFields(row, BUSINESS_UPDATE_ROW_FIELDS),
+  );
+  const header = `Collected ${updates.length} Google Business posts.`;
+  return mcpResponse({
+    text:
+      updates.length === 0
+        ? result
+          ? `${header} This profile has published no posts.`
+          : `${header} Google returned nothing for this business: either it has no posts or the identifier didn't match a profile. Confirm the business with get_business_profile, or pass its cid.`
+        : `${header} Posts longer than 300 characters end in "…" (full text in structuredContent).\n${formatMcpTable(updates, BUSINESS_UPDATE_COLUMNS)}`,
+    meta: buildProjectMeta(context, projectId, `/p/${projectId}`),
+    structuredContent: { status: "completed", taskId, updates },
+  });
+}
 
 const getBusinessUpdatesInputSchema = {
   projectId: projectIdSchema,
@@ -481,6 +584,7 @@ const getBusinessUpdatesInputSchema = {
     .describe(
       'Resume a previous call that returned status "processing". Pass back the taskId exactly as returned. Resuming charges no extra credits.',
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type GetBusinessUpdatesArgs = z.infer<
@@ -549,6 +653,7 @@ export const getBusinessUpdatesTool = {
   },
   handler: withMcpProjectAuth(async (args: GetBusinessUpdatesArgs, context) => {
     let taskId: string;
+    let request: LookupRequest | null = null;
     if (args.taskId) {
       if (args.taskId.includes(":")) {
         throw new AppError(
@@ -557,14 +662,30 @@ export const getBusinessUpdatesTool = {
         );
       }
       taskId = args.taskId;
+      request = await recallLookupTask(context.billing, taskId);
     } else {
       const identifier = resolveBusinessIdentifier(args);
+      const location = resolveBusinessLocation(args, context.project);
+      request = {
+        kind: "business_updates",
+        target: businessIdentifierKeyword(identifier),
+        params: { ...location, depth: args.depth ?? 10 },
+      };
+      const stored = await readCachedLookup(context.billing, {
+        ...request,
+        ...reviewsLookupOptions,
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
+      });
+      if (stored)
+        return updatesResponse(context, args.projectId, "", stored.value);
       const client = createDataforseoClient(context.billing);
       taskId = await client.business.updatesTaskPost({
         keyword: businessIdentifierKeyword(identifier),
-        ...resolveBusinessLocation(args, context.project),
+        ...location,
         depth: args.depth ?? 10,
       });
+      await rememberLookupTask(context.billing, taskId, request);
     }
 
     const outcome = await pollBusinessTask(
@@ -579,20 +700,13 @@ export const getBusinessUpdatesTool = {
       });
     }
 
-    const updates = resultItems(outcome.result).map((row) =>
-      pickRowFields(row, BUSINESS_UPDATE_ROW_FIELDS),
-    );
-    const header = `Collected ${updates.length} Google Business posts.`;
-    return mcpResponse({
-      text:
-        updates.length === 0
-          ? outcome.result
-            ? `${header} This profile has published no posts.`
-            : `${header} Google returned nothing for this business: either it has no posts or the identifier didn't match a profile. Confirm the business with get_business_profile, or pass its cid.`
-          : `${header} Posts longer than 300 characters end in "…" (full text in structuredContent).\n${formatMcpTable(updates, BUSINESS_UPDATE_COLUMNS)}`,
-      meta: buildProjectMeta(context, args.projectId, `/p/${args.projectId}`),
-      structuredContent: { status: "completed", taskId, updates },
-    });
+    if (request)
+      await storeLookupResult(
+        context.billing,
+        { ...request, ...reviewsLookupOptions },
+        outcome.result,
+      );
+    return updatesResponse(context, args.projectId, taskId, outcome.result);
   }),
 };
 
@@ -781,6 +895,7 @@ const getLocalRankGridInputSchema = {
       "Map zoom every point is searched at. Defaults to a zoom derived from spacingKm and latitude so each point's viewport spans the grid spacing; override only when you need a specific viewport.",
     ),
   languageCode: languageCodeSchema.optional(),
+  ...freshnessInputSchema,
 } as const;
 
 type GetLocalRankGridArgs = z.infer<
@@ -991,11 +1106,33 @@ export const getLocalRankGridTool = {
       device,
       languageCode,
     });
+    // The collected grid is stored like any lookup, so a repeat inside the
+    // freshness window posts no searches at all.
+    const gridLookup = {
+      kind: "local_rank_grid" as const,
+      target: args.keyword,
+      params: {
+        latitude: args.center.latitude,
+        longitude: args.center.longitude,
+        gridSize,
+        spacingKm,
+        zoom,
+        device,
+        languageCode,
+      },
+      ttlSeconds: RESEARCH_FRESHNESS_SECONDS.local,
+      schema: z.custom<Awaited<ReturnType<typeof collectRankGridTask>>[]>(),
+      refresh: args.refresh,
+      maxAgeDays: args.maxAgeDays,
+    };
+    const storedGrid = await readCachedLookup(context.billing, gridLookup);
     const receipt = rankGridReceiptSchema.safeParse(
-      await getCached(receiptKey),
+      storedGrid ? null : await getCached(receiptKey),
     );
-    let taskIds: Array<string | null>;
-    if (receipt.success) {
+    let taskIds: Array<string | null> = [];
+    if (storedGrid) {
+      // Already collected; nothing to post.
+    } else if (receipt.success) {
       taskIds = receipt.data;
     } else {
       // Only the post is metered; collection is free.
@@ -1019,9 +1156,11 @@ export const getLocalRankGridTool = {
       );
     }
 
-    const outcomes = await Promise.all(
-      taskIds.map((taskId) => collectRankGridTask(taskId, deadline)),
-    );
+    const outcomes =
+      storedGrid?.value ??
+      (await Promise.all(
+        taskIds.map((taskId) => collectRankGridTask(taskId, deadline)),
+      ));
     const ready = outcomes.filter(
       (outcome) => outcome.status !== "pending",
     ).length;
@@ -1056,6 +1195,8 @@ export const getLocalRankGridTool = {
         `Every grid search failed at DataForSEO: ${failures[0]}`,
       );
     }
+    if (!storedGrid)
+      await storeLookupResult(context.billing, gridLookup, outcomes);
 
     let matchedBusiness: MatchedBusiness | null = null;
     const grid = points.map((point, index): GridPointResult => {

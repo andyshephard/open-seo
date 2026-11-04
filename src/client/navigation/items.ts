@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   FileText,
   Globe,
+  History,
   LayoutDashboard,
   Link2,
   MapPin,
@@ -59,6 +60,11 @@ const projectNavItems = [
     to: "/p/$projectId/backlinks" as const,
     label: "Backlinks",
     icon: Link2,
+  },
+  {
+    to: "/p/$projectId/history" as const,
+    label: "Research History",
+    icon: History,
   },
   {
     to: "/p/$projectId/audit" as const,
@@ -152,6 +158,7 @@ export function getProjectNavGroups(projectId: string) {
         byPath("/p/$projectId/search-performance"),
         byPath("/p/$projectId/rank-tracking"),
         byPath("/p/$projectId/local-seo"),
+        byPath("/p/$projectId/history"),
         byPath("/p/$projectId/saved"),
         byPath("/p/$projectId/audit"),
       ],

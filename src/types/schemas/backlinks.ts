@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  archiveAsOfSchema,
+  researchFreshnessShape,
+} from "@/types/schemas/researchHistory";
+import {
   RESEARCH_SCOPES,
   RESEARCH_SCOPE_PARAM_DESCRIPTION,
   type ResearchScope,
@@ -49,6 +53,8 @@ export type BacklinksSpamFilterOptions = {
 export const backlinksLookupSchema = z.object({
   target: z.string().min(1, "Target is required").max(2048),
   scope: backlinksScopeParamSchema.optional(),
+  asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
 });
 
 export const backlinksOverviewInputSchema = backlinksLookupSchema.extend({
@@ -197,6 +203,7 @@ export const topPagesPageRequestSchema = backlinksPageRequestBase.extend({
 });
 
 export const backlinksSearchSchema = z.object({
+  asOf: archiveAsOfSchema.catch(undefined),
   includeSpam: z.boolean().optional().catch(undefined),
   target: z.string().optional(),
   scope: backlinksScopeParamSchema.optional().catch(undefined),

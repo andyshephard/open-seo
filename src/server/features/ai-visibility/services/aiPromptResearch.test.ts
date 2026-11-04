@@ -58,8 +58,21 @@ vi.mock("@/server/lib/dataforseo", () => ({
 vi.mock("@/server/lib/r2-cache", () => ({
   buildCacheKey: async (prefix: string) => prefix,
   getCached,
+  getCachedEntry: async (key: string) => {
+    const value: unknown = await getCached(key);
+    return value == null
+      ? null
+      : { value, storedAt: "2026-10-01T00:00:00.000Z" };
+  },
   setCached: async () => undefined,
+  RESEARCH_FRESHNESS_SECONDS: { aiSearch: 604800 },
 }));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: async () => false,
+  archiveParams: () => ({}),
+  readArchivedView: async () => null,
+}));
+
 vi.mock("./aiVisibilityState", () => ({ getTracker }));
 vi.mock("@/server/features/ai-search/services/access", () => ({
   assertPaidAiSearchPlan: assertPaidPlan,

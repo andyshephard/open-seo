@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { SERP_ANALYSIS_DEPTH } from "@/server/lib/dataforseo";
 import { buildCacheKey } from "@/server/lib/r2-cache";
+import {
+  lookupSerpSnapshot,
+  serpReceiptRefreshSuffix,
+  storeSerpSnapshot,
+} from "@/server/features/keywords/services/research/serpSnapshot";
 import { mcpResponse } from "@/server/mcp/formatters";
 import { buildProjectMeta } from "@/server/mcp/context";
 import { serpSchema, type serpItemSchema } from "@/shared/mcp-contracts";
@@ -18,6 +23,7 @@ import {
 import {
   languageCodeSchema,
   locationCodeSchema,
+  freshnessInputSchema,
   projectIdSchema,
 } from "@/server/mcp/schemas";
 
@@ -91,6 +97,7 @@ const inputSchema = {
     .describe(
       "Set true to get each result's page URL instead of a google.com/goto redirect. The search then takes a few minutes instead of seconds: the first call starts it and answers that it is still running, and the same call again 2-3 minutes later returns the results at no extra charge. For batch jobs, not while someone waits. Costs about half the credits.",
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -100,7 +107,7 @@ export const getSerpResultsTool = {
   config: {
     title: "Get Google SERP results",
     description:
-      "Get live Google organic search results for 1-10 keywords. Use it to see who ranks for a query, verify competitors, compare SERPs across keywords, or gather source URLs before content planning. Google serves automated readers pages that vary, so each keyword is read 3 times and merged into one row per site; expect 10-30 seconds. Quote bestPosition as a site's position: `rank` only numbers the merged rows, and a site with seenIn 1 is weak evidence. `url` can be a google.com/goto redirect that a plain fetch won't follow; `domain` is the reliable field, and finalUrls returns the page URLs for a job that can wait a few minutes. Costs ~5 credits per keyword at the default depth 10, and each additional 10 of depth adds ~3.5. Repeating the same call within 12 hours returns the same reads at no charge, so if a response is lost or a keyword is still running, wait a minute and repeat it. Per-keyword errors don't fail the batch. For a site's position over time, use get_rank_tracker or get_search_console_performance.",
+      "Get live Google organic search results for 1-10 keywords. Use it to see who ranks for a query, verify competitors, compare SERPs across keywords, or gather source URLs before content planning. Google serves automated readers pages that vary, so each keyword is read 3 times and merged into one row per site; expect 10-30 seconds. Quote bestPosition as a site's position: `rank` only numbers the merged rows, and a site with seenIn 1 is weak evidence. `url` can be a google.com/goto redirect that a plain fetch won't follow; `domain` is the reliable field, and finalUrls returns the page URLs for a job that can wait a few minutes. Costs ~5 credits per keyword at the default depth 10, and each additional 10 of depth adds ~3.5. A SERP fetched for the same keyword, market and device in the last 24 hours (by the app or an agent, at the same or a deeper depth) is reused at no charge; pass refresh: true to buy a live copy. Repeating the same call within 12 hours returns the same reads at no charge, so if a response is lost or a keyword is still running, wait a minute and repeat it. Past SERPs are in list_research_archive (kind serp_analysis), free. Per-keyword errors don't fail the batch. For a site's position over time, use get_rank_tracker or get_search_console_performance.",
     inputSchema,
     outputSchema: serpSchema,
     annotations: {
@@ -122,18 +129,27 @@ export const getSerpResultsTool = {
               q.locationName,
             );
           }
+          const input = {
+            keyword: q.keyword,
+            ...market,
+            locationName: q.locationName,
+            depth,
+            device,
+            refresh: args.refresh,
+            maxAgeDays: args.maxAgeDays,
+          };
+          // finalUrls reads are a different product (the pages' own URLs), so
+          // they skip the shared snapshot and rely on the read receipt alone.
+          const stored = args.finalUrls
+            ? null
+            : await lookupSerpSnapshot(input, context.billing);
           return {
             ok: true as const,
             keyword: q.keyword,
             scope: { ...market, locationName: q.locationName, device },
-            query: {
-              keyword: q.keyword,
-              ...market,
-              locationName: q.locationName,
-              depth,
-              device,
-              finalUrls: args.finalUrls,
-            },
+            input,
+            stored,
+            query: { ...input, finalUrls: args.finalUrls },
             receiptKey: await buildCacheKey("mcp:serp-reads", {
               organizationId: context.billing.organizationId,
               projectId: args.projectId,
@@ -144,6 +160,7 @@ export const getSerpResultsTool = {
               device,
               // Only when set, so a call without it keeps its receipt key.
               ...(args.finalUrls && { finalUrls: true }),
+              ...serpReceiptRefreshSuffix(args),
             }),
           };
         } catch (error) {
@@ -152,55 +169,75 @@ export const getSerpResultsTool = {
       }),
     );
 
-    const requests = lookups.flatMap((lookup) => (lookup.ok ? [lookup] : []));
-    const outcomes = await readMergedSerps(context.billing, requests);
+    // Only the keywords the shared snapshot can't answer are read (and paid for).
+    const requests = lookups.flatMap((lookup) =>
+      lookup.ok && !lookup.stored?.snapshot ? [lookup] : [],
+    );
+    const outcomes = requests.length
+      ? await readMergedSerps(context.billing, requests)
+      : [];
 
-    const results = lookups.map((lookup) => {
-      if (!lookup.ok) {
-        return {
-          keyword: lookup.keyword,
-          ok: false as const,
-          error: toolErrorMessage(lookup.error),
-        };
-      }
-      const outcome = outcomes[requests.indexOf(lookup)];
-      if (outcome.status === "failed") {
-        return {
-          keyword: lookup.keyword,
-          ok: false as const,
-          error: toolErrorMessage(outcome.error),
-        };
-      }
-      if (outcome.status === "processing") {
-        return {
-          keyword: lookup.keyword,
-          ok: false as const,
-          error: args.finalUrls
-            ? "Reading final URLs takes a few minutes. Call get_serp_results again with the same arguments in 2-3 minutes to collect this search at no extra charge."
-            : "This search is still running. Call get_serp_results again with the same arguments in about a minute to collect it at no extra charge.",
-        };
-      }
-      return {
-        keyword: lookup.keyword,
-        ok: true as const,
-        // Trim noise — return only essentials per item.
-        items: outcome.items.map((item, index) => {
-          const organic = item.type === "organic";
+    const results = await Promise.all(
+      lookups.map(async (lookup) => {
+        if (!lookup.ok) {
           return {
-            type: item.type,
-            // Organic rows come first, so the index is their place in the list.
-            rank: organic ? index + 1 : null,
-            bestPosition: organic ? (item.rank_group ?? null) : null,
-            seenIn: item.seenIn,
-            title: item.title ?? null,
-            url: item.url ?? null,
-            domain: item.domain ?? null,
-            description: item.description ?? null,
+            keyword: lookup.keyword,
+            ok: false as const,
+            error: toolErrorMessage(lookup.error),
           };
-        }),
-        ...lookup.scope,
-      };
-    });
+        }
+        let rows = lookup.stored?.snapshot?.items;
+        if (!rows) {
+          const outcome = outcomes[requests.indexOf(lookup)];
+          if (outcome.status === "failed") {
+            return {
+              keyword: lookup.keyword,
+              ok: false as const,
+              error: toolErrorMessage(outcome.error),
+            };
+          }
+          if (outcome.status === "processing") {
+            return {
+              keyword: lookup.keyword,
+              ok: false as const,
+              error: args.finalUrls
+                ? "Reading final URLs takes a few minutes. Call get_serp_results again with the same arguments in 2-3 minutes to collect this search at no extra charge."
+                : "This search is still running. Call get_serp_results again with the same arguments in about a minute to collect it at no extra charge.",
+            };
+          }
+          rows = lookup.stored
+            ? (
+                await storeSerpSnapshot(
+                  lookup.input,
+                  lookup.stored,
+                  outcome.items,
+                  context.billing,
+                )
+              ).items
+            : outcome.items;
+        }
+        return {
+          keyword: lookup.keyword,
+          ok: true as const,
+          // Trim noise — return only essentials per item.
+          items: rows.map((item, index) => {
+            const organic = item.type === "organic";
+            return {
+              type: item.type,
+              // Organic rows come first, so the index is their place in the list.
+              rank: organic ? index + 1 : null,
+              bestPosition: organic ? (item.rank_group ?? null) : null,
+              seenIn: item.seenIn ?? 1,
+              title: item.title ?? null,
+              url: item.url ?? null,
+              domain: item.domain ?? null,
+              description: item.description ?? null,
+            };
+          }),
+          ...lookup.scope,
+        };
+      }),
+    );
 
     const okCount = results.filter((r) => r.ok).length;
     // One budget for the whole response: ten queries split it, so a 10 × depth

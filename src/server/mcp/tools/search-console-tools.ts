@@ -1,6 +1,7 @@
 /* eslint-disable max-lines */
 import { z } from "zod";
 import { searchConsoleSchema } from "@/shared/mcp-contracts";
+import { archiveLookup } from "@/server/features/research-history/services/researchArchive";
 import { buildProjectMeta } from "@/server/mcp/context";
 import { mcpResponse } from "@/server/mcp/formatters";
 import { optionalMetaOutputSchema } from "@/server/mcp/output-schemas";
@@ -534,6 +535,24 @@ export const inspectUrlsTool = {
         urls: args.urls,
         languageCode: args.languageCode,
       });
+      // Keep each inspection as a dated record (coverage, canonical, last crawl).
+      const fetchedAt = new Date().toISOString();
+      await Promise.all(
+        results.flatMap((r) =>
+          r.result
+            ? [
+                archiveLookup(context.billing, {
+                  kind: "url_inspection",
+                  target: r.url,
+                  viewKey: `url-inspection:${r.url}`,
+                  params: {},
+                  fetchedAt,
+                  payload: r.result,
+                }),
+              ]
+            : [],
+        ),
+      );
 
       const blocks = results.map(inspectionBlock);
       const text =

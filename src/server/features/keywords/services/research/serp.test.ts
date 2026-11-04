@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
+import type * as R2Cache from "@/server/lib/r2-cache";
 
 const mocks = vi.hoisted(() => ({
   assertLocalResearchLocation: vi.fn(async () => {}),
@@ -16,10 +17,21 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("cloudflare:workers", () => ({ waitUntil: vi.fn() }));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: vi.fn(),
+  archiveParams: vi.fn(() => ({})),
+  readArchivedView: vi.fn(),
+}));
 
-vi.mock("@/server/lib/r2-cache", () => ({
+vi.mock("@/server/lib/r2-cache", async (importOriginal) => ({
+  ...(await importOriginal<typeof R2Cache>()),
   buildCacheKey: mocks.buildCacheKey,
-  getCached: mocks.getCached,
+  getCachedEntry: async () => {
+    const value: unknown = await mocks.getCached();
+    return value == null
+      ? null
+      : { value, storedAt: "2026-10-01T00:00:00.000Z" };
+  },
   setCached: mocks.setCached,
 }));
 
@@ -52,21 +64,16 @@ const input = {
 
 function cachedSnapshot(depth: number) {
   return {
-    requestedKeyword: "seo tools",
+    keyword: "seo tools",
     depth,
+    fetchedAt: "2026-10-01T00:00:00.000Z",
     items: [
       {
-        rank: 1,
+        type: "organic",
+        rank_group: 1,
         title: "Cached",
         url: "https://cached.example",
         domain: "cached.example",
-        description: "",
-        etv: null,
-        estimatedPaidTrafficCost: null,
-        referringDomains: null,
-        backlinks: null,
-        isNew: false,
-        rankChange: null,
       },
     ],
   };
@@ -150,7 +157,7 @@ describe("getSerpAnalysis cache depth", () => {
     ]);
     // The deeper snapshot replaces the shallow entry under the same key.
     expect(mocks.setCached).toHaveBeenCalledWith(
-      "serp:analysis:key",
+      "serp:snapshot:key",
       expect.objectContaining({ depth: 100 }),
       expect.any(Number),
     );
@@ -175,7 +182,7 @@ describe("getSerpAnalysis cache depth", () => {
     });
     // A national snapshot must never answer a local request.
     expect(mocks.buildCacheKey).toHaveBeenCalledWith(
-      "serp:analysis",
+      "serp:snapshot",
       expect.objectContaining({ locationName }),
     );
   });

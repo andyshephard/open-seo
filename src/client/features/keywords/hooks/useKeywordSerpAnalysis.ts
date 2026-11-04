@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { useCallback, useState } from "react";
 import {
   getErrorCode,
@@ -29,12 +30,15 @@ export function useKeywordSerpAnalysis(
 
   // Everything but the depth identifies the snapshot; the depth decides how
   // deep it goes.
+  const { asOf, refresh, refreshNonce } = useArchiveView();
   const snapshotKey = [
     "serpAnalysis",
     projectId,
     serpKeyword,
     locationCode,
     locationName,
+    asOf,
+    refreshNonce,
   ];
 
   const serpQuery = useQuery({
@@ -47,6 +51,8 @@ export function useKeywordSerpAnalysis(
           locationCode,
           locationName,
           depth: requestedDepth,
+          asOf,
+          refresh,
         },
       }),
     // Keep the shallow snapshot on screen while the deeper refetch runs — but

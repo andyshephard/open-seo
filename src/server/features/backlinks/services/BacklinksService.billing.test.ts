@@ -7,6 +7,7 @@ const domainPagesMock = vi.fn();
 const backlinksHistoryMock = vi.fn();
 
 vi.mock("@/server/lib/r2-cache", () => ({
+  RESEARCH_FRESHNESS_SECONDS: { backlinks: 3 * 86400 },
   buildCacheKey: vi.fn(
     async (prefix: string, params: Record<string, unknown>) =>
       `${prefix}:${JSON.stringify(params)}`,
@@ -14,6 +15,16 @@ vi.mock("@/server/lib/r2-cache", () => ({
   getCached: vi.fn(async () => null),
   setCached: vi.fn(async () => undefined),
 }));
+
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: vi.fn(),
+  archiveParams: vi.fn(() => ({})),
+  readArchivedView: vi.fn(),
+}));
+vi.mock(
+  "@/server/features/research-history/services/researchHistoryCapture",
+  () => ({ captureBacklinkSummary: vi.fn() }),
+);
 
 vi.mock("@/server/lib/dataforseo", () => ({
   normalizeBacklinksTarget: vi.fn(),

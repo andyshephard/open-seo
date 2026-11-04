@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useArchiveView } from "@/client/features/research-history/archiveAsOf";
 import { useQuery } from "@tanstack/react-query";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
 import { captureClientEvent } from "@/client/lib/posthog";
@@ -43,6 +44,11 @@ type KeywordResearchRequest = {
   mode: KeywordMode;
   clickstream: boolean;
   groupKeywords: boolean;
+  /** Archived day to reopen instead of fetching live. */
+  asOf?: string;
+  /** Buy a live copy (this view's "Refresh live"). */
+  refresh?: boolean;
+  refreshNonce?: number;
 };
 
 export const KEYWORD_RESEARCH_STALE_TIME_MS = 24 * 60 * 60 * 1000;
@@ -81,6 +87,8 @@ export function buildKeywordResearchQueryKey(
         request.mode,
         request.clickstream,
         request.groupKeywords,
+        ...(request.asOf ? [request.asOf] : []),
+        ...(request.refreshNonce ? [request.refreshNonce] : []),
       ]
     : ["keywordResearch", "idle"];
 }
@@ -96,6 +104,8 @@ export function keywordResearchQueryFn(request: KeywordResearchRequest) {
       mode: request.mode,
       clickstream: request.clickstream,
       groupKeywords: request.groupKeywords,
+      asOf: request.asOf,
+      refresh: request.refresh,
     },
   });
 }
@@ -115,29 +125,34 @@ export function useKeywordResearchData(
     projectId,
     resultLimit,
   } = input;
-  const request = useMemo<KeywordResearchRequest | null>(
-    () =>
-      buildKeywordResearchRequest({
-        keywordInput,
-        locationCode,
-        locationName,
-        mode,
-        projectId,
-        resultLimit,
-        clickstream,
-        groupKeywords,
-      }),
-    [
-      clickstream,
-      groupKeywords,
+  const { asOf, refresh, refreshNonce } = useArchiveView();
+  const request = useMemo<KeywordResearchRequest | null>(() => {
+    const built = buildKeywordResearchRequest({
       keywordInput,
       locationCode,
       locationName,
       mode,
       projectId,
       resultLimit,
-    ],
-  );
+      clickstream,
+      groupKeywords,
+    });
+    return built && (asOf || refreshNonce)
+      ? { ...built, asOf, refresh, refreshNonce }
+      : built;
+  }, [
+    asOf,
+    refresh,
+    refreshNonce,
+    clickstream,
+    groupKeywords,
+    keywordInput,
+    locationCode,
+    locationName,
+    mode,
+    projectId,
+    resultLimit,
+  ]);
   const queryKey = useMemo(
     () => buildKeywordResearchQueryKey(request),
     [request],

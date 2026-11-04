@@ -1,0 +1,1 @@
+ALTER TABLE "domain_backlink_snapshots" ADD COLUMN "domain_rating" integer;

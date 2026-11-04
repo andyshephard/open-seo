@@ -13,7 +13,7 @@ const apiKeyMetadataSchema = z.looseObject({
   organizationId: z.string().min(1),
 });
 
-function getApiKey(request: Request) {
+export function getApiKey(request: Request) {
   // Both branches require the oseo_ prefix: anything else (a Cloudflare OAuth
   // access token, a stray foreign x-api-key header) falls through to the
   // OAuth provider instead of being consumed here.
@@ -85,6 +85,91 @@ function apiKeyErrorResponse(
   );
 }
 
+type ApiKeyIdentity = {
+  userId: string;
+  userEmail: string;
+  organizationId: string;
+  role: string;
+};
+
+/**
+ * Verifies an `oseo_` API key and resolves the organization it is bound to.
+ * Shared by /mcp and the read-only export API (research-history
+ * researchExport.ts), which reads no more than the key's MCP tools already
+ * can. Returns the error response to send when the key is refused.
+ */
+export async function authenticateApiKey(
+  apiKey: string,
+  env: unknown,
+): Promise<{ identity: ApiKeyIdentity } | { response: Response }> {
+  // Keep API keys off sessions: verifyApiKey (rather than Better Auth's
+  // enableSessionForAPIKeys mock sessions) means a key never becomes a
+  // session that could reach account or organization endpoints.
+  const authApi = getAuth().api;
+  const result = await authApi.verifyApiKey({ body: { key: apiKey } });
+
+  if (!result.valid || !result.key) {
+    return { response: apiKeyErrorResponse(result.error) };
+  }
+
+  const userId = result.key.referenceId;
+
+  // Per-user request throttle. The binding is declared in deploy/alchemy/alchemy.run.ts
+  // (hosted prod only); local dev and self-host run without it and skip
+  // limiting, which is fine single-user. This replaces the better-auth
+  // plugin limiter, whose broken idle-gap window hard-blocked active MCP
+  // clients (see lib/auth-api-key.ts). Cloudflare's counter is per-colo
+  // best-effort, which is all this needs to be: credits bound spend, this
+  // bounds runaway request volume.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the binding is declared as a rate limiter in deploy/alchemy/alchemy.run.ts; absent outside hosted prod
+  const rateLimit = (env as { MCP_RATE_LIMIT?: RateLimit }).MCP_RATE_LIMIT;
+  if (rateLimit) {
+    const { success } = await rateLimit.limit({ key: userId });
+    if (!success) {
+      return {
+        response: apiKeyErrorResponse({
+          code: "RATE_LIMITED",
+          message: "Rate limit exceeded: 5000 requests per minute",
+          details: { tryAgainIn: 60_000 },
+        }),
+      };
+    }
+  }
+
+  const user = await AuthRepository.getHostedUser(userId);
+  if (!user?.email) return { response: apiKeyErrorResponse(null) };
+
+  // A key is bound to the organization that was active when it was created
+  // and bills that org. The member row is the authorization fact, re-read
+  // per request so removing a member kills their keys immediately; the role
+  // is never stored on the key. A key with no organization predates the
+  // binding and was not backfilled, so it fails the same way rather than
+  // being rebound to some other org.
+  const organizationId = apiKeyMetadataSchema.safeParse(result.key.metadata)
+    .data?.organizationId;
+  const membership = organizationId
+    ? await AuthRepository.getMembership(userId, organizationId)
+    : null;
+  if (!organizationId || !membership) {
+    return {
+      response: apiKeyErrorResponse({
+        code: "FORBIDDEN",
+        message:
+          "This API key's organization access was revoked. Create a new key in Settings.",
+      }),
+    };
+  }
+
+  return {
+    identity: {
+      userId,
+      userEmail: user.email,
+      organizationId,
+      role: membership.role,
+    },
+  };
+}
+
 export async function handleMcpApiKeyRequest(
   request: Request,
   env: unknown,
@@ -97,73 +182,20 @@ export async function handleMcpApiKeyRequest(
   if (!apiKey) return null;
 
   try {
-    // Keep API keys scoped to /mcp: verifyApiKey (rather than Better Auth's
-    // enableSessionForAPIKeys mock sessions) means a key never becomes a
-    // session that could reach account or organization endpoints.
-    const authApi = getAuth().api;
-    const result = await authApi.verifyApiKey({ body: { key: apiKey } });
-
-    if (!result.valid || !result.key) {
-      return apiKeyErrorResponse(result.error);
-    }
-
-    const userId = result.key.referenceId;
-
-    // Per-user request throttle. The binding is declared in deploy/alchemy/alchemy.run.ts
-    // (hosted prod only); local dev and self-host run without it and skip
-    // limiting, which is fine single-user. This replaces the better-auth
-    // plugin limiter, whose broken idle-gap window hard-blocked active MCP
-    // clients (see lib/auth-api-key.ts). Cloudflare's counter is per-colo
-    // best-effort, which is all this needs to be: credits bound spend, this
-    // bounds runaway request volume.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the binding is declared as a rate limiter in deploy/alchemy/alchemy.run.ts; absent outside hosted prod
-    const rateLimit = (env as { MCP_RATE_LIMIT?: RateLimit }).MCP_RATE_LIMIT;
-    if (rateLimit) {
-      const { success } = await rateLimit.limit({ key: userId });
-      if (!success) {
-        return apiKeyErrorResponse({
-          code: "RATE_LIMITED",
-          message: "Rate limit exceeded: 5000 requests per minute",
-          details: { tryAgainIn: 60_000 },
-        });
-      }
-    }
-
-    const user = await AuthRepository.getHostedUser(userId);
-    if (!user?.email) return apiKeyErrorResponse(null);
-
-    // A key is bound to the organization that was active when it was created
-    // and bills that org. The member row is the authorization fact, re-read
-    // per request so removing a member kills their keys immediately; the role
-    // is never stored on the key. A key with no organization predates the
-    // binding and was not backfilled, so it fails the same way rather than
-    // being rebound to some other org.
-    const organizationId = apiKeyMetadataSchema.safeParse(result.key.metadata)
-      .data?.organizationId;
-    const membership = organizationId
-      ? await AuthRepository.getMembership(userId, organizationId)
-      : null;
-    if (!organizationId || !membership) {
-      return apiKeyErrorResponse({
-        code: "FORBIDDEN",
-        message:
-          "This API key's organization access was revoked. Create a new key in Settings.",
-      });
-    }
+    const auth = await authenticateApiKey(apiKey, env);
+    if ("response" in auth) return auth.response;
+    const { identity } = auth;
 
     // clientId "api_key" satisfies the hosted transport's fail-closed props
     // schema and counts these calls as external MCP clients in telemetry.
     const props = createWorkersOAuthMcpProps({
-      userId,
-      userEmail: user.email,
-      organizationId,
-      role: membership.role,
+      ...identity,
       baseUrl: getHostedBaseUrl(),
       scopes: [...MCP_OAUTH_SCOPES],
       clientId: "api_key",
     });
 
-    await recordMcpAuthorized(organizationId);
+    await recordMcpAuthorized(identity.organizationId);
 
     const { handleAuthenticatedOpenSeoMcpRequest } =
       await import("@/server/mcp/transport");

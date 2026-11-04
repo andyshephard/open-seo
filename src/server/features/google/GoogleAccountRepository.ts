@@ -69,11 +69,19 @@ async function remove(input: AccountInput) {
   ]);
 }
 
-async function listGscProjectIds(input: AccountInput) {
-  const rows = await db
-    .select({ projectId: gscConnections.projectId })
-    .from(gscConnections)
-    .where(scope({ ...input, provider: "gsc" }).usage);
+/** The projects mapped to this grant, as `remove` would unmap them. */
+async function listProjectIds(input: AccountInput) {
+  const { usage } = scope(input);
+  const rows =
+    input.provider === "gsc"
+      ? await db
+          .select({ projectId: gscConnections.projectId })
+          .from(gscConnections)
+          .where(usage)
+      : await db
+          .select({ projectId: ga4Connections.projectId })
+          .from(ga4Connections)
+          .where(usage);
   return rows.map((row) => row.projectId);
 }
 
@@ -194,7 +202,7 @@ export const GoogleAccountRepository = {
   getRemovalImpact,
   remove,
   removeMemberConnections,
-  listGscProjectIds,
+  listProjectIds,
   listUnusedGrants,
   deleteUnusedGrant,
   hasDataGrantsForGoogleAccount,

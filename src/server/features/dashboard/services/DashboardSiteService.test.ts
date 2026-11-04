@@ -4,6 +4,9 @@ import { GscService } from "@/server/features/gsc/services/GscService";
 import { GscConnectionRepository } from "@/server/features/gsc/repositories/GscConnectionRepository";
 
 const providers = vi.hoisted(() => ({ domains: vi.fn(), links: vi.fn() }));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: async () => false,
+}));
 vi.mock("@/server/lib/dataforseo", async () => ({
   ...(await import("@/server/lib/dataforseoBacklinksTarget")),
   createDataforseoClient: () => ({

@@ -57,6 +57,8 @@ const allowed = [
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_MAPS_API_KEY",
   "CRAWLER_ACCESS_SECRET",
+  // Turns on the research export API with AUTH_MODE=local_noauth.
+  "OPENSEO_EXPORT_KEY",
 ];
 config.vars = {
   ...secrets,

@@ -26,6 +26,7 @@ import {
   languageCodeSchema,
   locationCodeSchema,
   projectIdSchema,
+  freshnessInputSchema,
 } from "@/server/mcp/schemas";
 
 const LOCAL_VOLUME_CREDITS = Math.ceil(
@@ -78,6 +79,7 @@ const inputSchema = {
     .describe(
       "Include similar keyword variants that can share volume, CPC, and competition. Default false returns only core keywords (DataForSEO ignore_synonyms=true). True includes variants (ignore_synonyms=false). This filters keywords, not metric estimates. Do not sum shared volumes. No effect for countries served from Google Ads data.",
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -122,7 +124,7 @@ export const researchKeywordsTool = {
   config: {
     title: "Research keywords (bulk)",
     description:
-      "Find keyword ideas for 1-5 seed keywords in one call, each with search volume, keyword difficulty, and CPC. Use it to learn what people search for around a topic. One bad seed won't fail the batch. Costs ~54 credits per seed at the default result limit and ~110 at 500; an obscure seed's fallback lookup adds ~40-95, and countries served from Google Ads data cost a flat ~96, without difficulty or intent. For metrics on keywords you already have, use get_keyword_metrics; for seeds to start from, use get_suggested_keywords.",
+      "Find keyword ideas for 1-5 seed keywords in one call, each with search volume, keyword difficulty, and CPC. Use it to learn what people search for around a topic. One bad seed won't fail the batch. Costs ~54 credits per seed at the default result limit and ~110 at 500; an obscure seed's fallback lookup adds ~40-95, and countries served from Google Ads data cost a flat ~96, without difficulty or intent. For metrics on keywords you already have, use get_keyword_metrics; for seeds to start from, use get_suggested_keywords. Stored results are reused free inside the freshness window (30 days); pass refresh: true to buy a live copy, or maxAgeDays to accept only newer data. Before buying, check get_research_history (dated trends) and list_research_archive (every past result in full), both free.",
     inputSchema,
     outputSchema: z.looseObject({
       results: z.array(
@@ -174,6 +176,8 @@ export const researchKeywordsTool = {
               mode: "auto",
               clickstream: args.includeClickstreamData ?? false,
               groupKeywords: args.groupKeywords ?? false,
+              refresh: args.refresh,
+              maxAgeDays: args.maxAgeDays,
             },
             context.billing,
           );

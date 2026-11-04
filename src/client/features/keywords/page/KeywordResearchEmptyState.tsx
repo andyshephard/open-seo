@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Globe, Search, Tag } from "lucide-react";
 import { CountryFlag } from "@/client/components/CountryFlag";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import { EmptyState } from "@/client/components/EmptyState";
 import { RecentSearches } from "@/client/components/RecentSearches";
 import { LOCATIONS } from "@/client/features/keywords/utils";
@@ -68,6 +69,30 @@ export function KeywordSearchHistory({ controller, projectId }: Props) {
 
   return (
     <>
+      <div className="pb-4">
+        <SavedRunsList
+          projectId={projectId}
+          kinds={["keyword_research", "serp_analysis", "keyword_metrics"]}
+          renderLink={(run, props) =>
+            run.entries.every((entry) => entry.kind === "keyword_metrics") ? (
+              // Metrics refreshes cover saved keywords; that page shows them.
+              <Link
+                to="/p/$projectId/saved"
+                params={{ projectId }}
+                title={run.target}
+                {...props}
+              />
+            ) : (
+              <Link
+                to="/p/$projectId/keywords"
+                params={{ projectId }}
+                search={{ q: run.target, asOf: run.date }}
+                {...props}
+              />
+            )
+          }
+        />
+      </div>
       {showRecentSearches ? (
         <RecentSearchList controller={controller} projectId={projectId} />
       ) : null}

@@ -12,7 +12,7 @@ import {
   formatMcpTable,
   type McpTableColumn,
 } from "@/server/mcp/table";
-import { projectIdSchema } from "@/server/mcp/schemas";
+import { freshnessInputSchema, projectIdSchema } from "@/server/mcp/schemas";
 import {
   BACKLINKS_DEFAULT_SORT,
   BACKLINKS_PAGE_SIZES,
@@ -76,6 +76,7 @@ const inputSchema = {
     .describe(
       "Hide backlinks with Spam scores of 40 or higher. Defaults to true. Unknown scores remain visible. This is a heuristic, not a judgment about a link. Set false to inspect all matching links. True leaves six user filter conditions (two for subfolders); false allows eight (four for subfolders). Each include/exclude term and numeric bound counts separately.",
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -125,7 +126,7 @@ export const getBacklinksProfileTool = {
   config: {
     title: "Get backlinks profile",
     description:
-      "List the individual backlinks of a domain or page: linking and target URLs, anchors, dofollow or nofollow, authority and spam signals, and lost or broken status. Supports filters, sorting, pagination, and a mode of one_per_domain (the default) or as_is. Costs ~30 credits per page of rows. Self-hosted deployments need the Backlinks API enabled on their DataForSEO account. For totals and top referring domains, use get_backlinks_overview.",
+      "List the individual backlinks of a domain or page: linking and target URLs, anchors, dofollow or nofollow, authority and spam signals, and lost or broken status. Supports filters, sorting, pagination, and a mode of one_per_domain (the default) or as_is. Costs ~30 credits per page of rows. Self-hosted deployments need the Backlinks API enabled on their DataForSEO account. For totals and top referring domains, use get_backlinks_overview. Stored results are reused free inside the freshness window (3 days); pass refresh: true to buy a live copy, or maxAgeDays to accept only newer data. Before buying, check get_research_history (dated trends) and list_research_archive (every past result in full), both free.",
     inputSchema,
     outputSchema: z.looseObject({
       target: z.string(),
@@ -151,6 +152,8 @@ export const getBacklinksProfileTool = {
       sortOrder: args.sortOrder,
       filters: args.filters,
       mode: args.mode,
+      refresh: args.refresh,
+      maxAgeDays: args.maxAgeDays,
     };
 
     // The page result carries only rows, so resolve the target here to report

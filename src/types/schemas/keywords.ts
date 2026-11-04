@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  archiveAsOfSchema,
+  researchFreshnessShape,
+} from "@/types/schemas/researchHistory";
 import { TAG_COLOR_KEYS } from "@/shared/tag-colors";
 import {
   booleanSearchParamSchema,
@@ -43,6 +47,8 @@ export const researchKeywordsSchema = z.object({
   // Clickstream-refined volumes double the DataForSEO request cost; opt-in.
   clickstream: z.boolean().optional().default(false),
   groupKeywords: z.boolean().optional().default(false),
+  asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
 });
 
 export const savedKeywordMetricSchema = z.object({
@@ -226,6 +232,8 @@ export const serpAnalysisSchema = z.object({
   // full 100 the SERP panel buys when a user pages past the loaded results.
   // Each 10 of depth is another crawled Google page (~3.5 credits).
   depth: z.union([z.literal(10), z.literal(100)]).default(10),
+  asOf: archiveAsOfSchema,
+  ...researchFreshnessShape,
 });
 
 /* ------------------------------------------------------------------ */
@@ -243,6 +251,7 @@ const keywordSortFields = [
 const keywordModes = ["auto", "related", "suggestions", "ideas"] as const;
 
 export const keywordsSearchSchema = z.object({
+  asOf: archiveAsOfSchema.catch(undefined),
   q: z.string().optional(),
   loc: z.coerce.number().int().positive().optional(),
   locName: z.string().optional(),
