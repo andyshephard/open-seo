@@ -20,6 +20,7 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { QueryError } from "@/client/components/QueryState";
+import { SavedMetricsRuns } from "@/client/features/research-history/SavedRunsList";
 import { TablePagination } from "@/client/components/table/TablePagination";
 import { SavedKeywordsBulkActionBar } from "@/client/features/saved-keywords/SavedKeywordsBulkActionBar";
 import { SavedKeywordsBulkTagsModal } from "@/client/features/saved-keywords/SavedKeywordsBulkTagsModal";
@@ -323,6 +324,7 @@ function SavedKeywordsPage() {
         {removeError ? (
           <RemoveSavedKeywordsError message={removeError} />
         ) : null}
+        <SavedMetricsRuns projectId={projectId} />
         {savedKeywordsQuery.isError ? (
           <QueryError
             error={savedKeywordsQuery.error}

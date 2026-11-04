@@ -53,6 +53,7 @@ import { Route as AppPProjectIdBacklinksRouteImport } from './routes/_app/p/$pro
 import { Route as AppPProjectIdBrandLookupRouteImport } from './routes/_app/p/$projectId/brand-lookup'
 import { Route as AppPProjectIdContextRouteImport } from './routes/_app/p/$projectId/context'
 import { Route as AppPProjectIdDomainRouteImport } from './routes/_app/p/$projectId/domain'
+import { Route as AppPProjectIdHistoryRouteImport } from './routes/_app/p/$projectId/history'
 import { Route as AppPProjectIdKeywordsRouteImport } from './routes/_app/p/$projectId/keywords'
 import { Route as AppPProjectIdLocalSeoRouteImport } from './routes/_app/p/$projectId/local-seo'
 import { Route as AppPProjectIdPromptExplorerRouteImport } from './routes/_app/p/$projectId/prompt-explorer'
@@ -65,6 +66,7 @@ import { Route as ApiGa4OauthCallbackRouteImport } from './routes/api/ga4/oauth/
 import { Route as ApiGscOauthCallbackRouteImport } from './routes/api/gsc/oauth/callback'
 import { Route as AppPProjectIdAiVisibilityIndexRouteImport } from './routes/_app/p/$projectId/ai-visibility/index'
 import { Route as AppPProjectIdAiVisibilityResearchRouteImport } from './routes/_app/p/$projectId/ai-visibility/research'
+import { Route as AppPProjectIdArchiveEntryIdRouteImport } from './routes/_app/p/$projectId/archive.$entryId'
 import { Route as AppPProjectIdAuditIndexRouteImport } from './routes/_app/p/$projectId/audit/index'
 import { Route as AppPProjectIdLocalSeoIndexRouteImport } from './routes/_app/p/$projectId/local-seo/index'
 import { Route as AppPProjectIdLocalSeoTrackerIdRouteImport } from './routes/_app/p/$projectId/local-seo/$trackerId'
@@ -304,6 +306,11 @@ const AppPProjectIdDomainRoute = AppPProjectIdDomainRouteImport.update({
   path: '/domain',
   getParentRoute: () => AppPProjectIdRouteRoute,
 } as any)
+const AppPProjectIdHistoryRoute = AppPProjectIdHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AppPProjectIdRouteRoute,
+} as any)
 const AppPProjectIdKeywordsRoute = AppPProjectIdKeywordsRouteImport.update({
   id: '/keywords',
   path: '/keywords',
@@ -368,6 +375,12 @@ const AppPProjectIdAiVisibilityResearchRoute =
     id: '/research',
     path: '/research',
     getParentRoute: () => AppPProjectIdAiVisibilityRoute,
+  } as any)
+const AppPProjectIdArchiveEntryIdRoute =
+  AppPProjectIdArchiveEntryIdRouteImport.update({
+    id: '/archive/$entryId',
+    path: '/archive/$entryId',
+    getParentRoute: () => AppPProjectIdRouteRoute,
   } as any)
 const AppPProjectIdAuditIndexRoute = AppPProjectIdAuditIndexRouteImport.update({
   id: '/audit/',
@@ -499,6 +512,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/brand-lookup': typeof AppPProjectIdBrandLookupRoute
   '/p/$projectId/context': typeof AppPProjectIdContextRoute
   '/p/$projectId/domain': typeof AppPProjectIdDomainRoute
+  '/p/$projectId/history': typeof AppPProjectIdHistoryRoute
   '/p/$projectId/keywords': typeof AppPProjectIdKeywordsRoute
   '/p/$projectId/local-seo': typeof AppPProjectIdLocalSeoRouteWithChildren
   '/p/$projectId/prompt-explorer': typeof AppPProjectIdPromptExplorerRoute
@@ -511,6 +525,7 @@ export interface FileRoutesByFullPath {
   '/api/gsc/oauth/callback': typeof ApiGscOauthCallbackRoute
   '/p/$projectId/': typeof AppPProjectIdIndexRoute
   '/p/$projectId/ai-visibility/research': typeof AppPProjectIdAiVisibilityResearchRoute
+  '/p/$projectId/archive/$entryId': typeof AppPProjectIdArchiveEntryIdRoute
   '/p/$projectId/local-seo/$trackerId': typeof AppPProjectIdLocalSeoTrackerIdRoute
   '/p/$projectId/rank-tracking/$configId': typeof AppPProjectIdRankTrackingConfigIdRoute
   '/p/$projectId/reports/$reportId': typeof AppPProjectIdReportsReportIdRoute
@@ -566,6 +581,7 @@ export interface FileRoutesByTo {
   '/p/$projectId/brand-lookup': typeof AppPProjectIdBrandLookupRoute
   '/p/$projectId/context': typeof AppPProjectIdContextRoute
   '/p/$projectId/domain': typeof AppPProjectIdDomainRoute
+  '/p/$projectId/history': typeof AppPProjectIdHistoryRoute
   '/p/$projectId/keywords': typeof AppPProjectIdKeywordsRoute
   '/p/$projectId/prompt-explorer': typeof AppPProjectIdPromptExplorerRoute
   '/p/$projectId/sam': typeof AppPProjectIdSamRoute
@@ -575,6 +591,7 @@ export interface FileRoutesByTo {
   '/api/gsc/oauth/callback': typeof ApiGscOauthCallbackRoute
   '/p/$projectId': typeof AppPProjectIdIndexRoute
   '/p/$projectId/ai-visibility/research': typeof AppPProjectIdAiVisibilityResearchRoute
+  '/p/$projectId/archive/$entryId': typeof AppPProjectIdArchiveEntryIdRoute
   '/p/$projectId/local-seo/$trackerId': typeof AppPProjectIdLocalSeoTrackerIdRoute
   '/p/$projectId/rank-tracking/$configId': typeof AppPProjectIdRankTrackingConfigIdRoute
   '/p/$projectId/reports/$reportId': typeof AppPProjectIdReportsReportIdRoute
@@ -637,6 +654,7 @@ export interface FileRoutesById {
   '/_app/p/$projectId/brand-lookup': typeof AppPProjectIdBrandLookupRoute
   '/_app/p/$projectId/context': typeof AppPProjectIdContextRoute
   '/_app/p/$projectId/domain': typeof AppPProjectIdDomainRoute
+  '/_app/p/$projectId/history': typeof AppPProjectIdHistoryRoute
   '/_app/p/$projectId/keywords': typeof AppPProjectIdKeywordsRoute
   '/_app/p/$projectId/local-seo': typeof AppPProjectIdLocalSeoRouteWithChildren
   '/_app/p/$projectId/prompt-explorer': typeof AppPProjectIdPromptExplorerRoute
@@ -649,6 +667,7 @@ export interface FileRoutesById {
   '/api/gsc/oauth/callback': typeof ApiGscOauthCallbackRoute
   '/_app/p/$projectId/': typeof AppPProjectIdIndexRoute
   '/_app/p/$projectId/ai-visibility/research': typeof AppPProjectIdAiVisibilityResearchRoute
+  '/_app/p/$projectId/archive/$entryId': typeof AppPProjectIdArchiveEntryIdRoute
   '/_app/p/$projectId/local-seo/$trackerId': typeof AppPProjectIdLocalSeoTrackerIdRoute
   '/_app/p/$projectId/rank-tracking/$configId': typeof AppPProjectIdRankTrackingConfigIdRoute
   '/_app/p/$projectId/reports/$reportId': typeof AppPProjectIdReportsReportIdRoute
@@ -709,6 +728,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/brand-lookup'
     | '/p/$projectId/context'
     | '/p/$projectId/domain'
+    | '/p/$projectId/history'
     | '/p/$projectId/keywords'
     | '/p/$projectId/local-seo'
     | '/p/$projectId/prompt-explorer'
@@ -721,6 +741,7 @@ export interface FileRouteTypes {
     | '/api/gsc/oauth/callback'
     | '/p/$projectId/'
     | '/p/$projectId/ai-visibility/research'
+    | '/p/$projectId/archive/$entryId'
     | '/p/$projectId/local-seo/$trackerId'
     | '/p/$projectId/rank-tracking/$configId'
     | '/p/$projectId/reports/$reportId'
@@ -776,6 +797,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/brand-lookup'
     | '/p/$projectId/context'
     | '/p/$projectId/domain'
+    | '/p/$projectId/history'
     | '/p/$projectId/keywords'
     | '/p/$projectId/prompt-explorer'
     | '/p/$projectId/sam'
@@ -785,6 +807,7 @@ export interface FileRouteTypes {
     | '/api/gsc/oauth/callback'
     | '/p/$projectId'
     | '/p/$projectId/ai-visibility/research'
+    | '/p/$projectId/archive/$entryId'
     | '/p/$projectId/local-seo/$trackerId'
     | '/p/$projectId/rank-tracking/$configId'
     | '/p/$projectId/reports/$reportId'
@@ -846,6 +869,7 @@ export interface FileRouteTypes {
     | '/_app/p/$projectId/brand-lookup'
     | '/_app/p/$projectId/context'
     | '/_app/p/$projectId/domain'
+    | '/_app/p/$projectId/history'
     | '/_app/p/$projectId/keywords'
     | '/_app/p/$projectId/local-seo'
     | '/_app/p/$projectId/prompt-explorer'
@@ -858,6 +882,7 @@ export interface FileRouteTypes {
     | '/api/gsc/oauth/callback'
     | '/_app/p/$projectId/'
     | '/_app/p/$projectId/ai-visibility/research'
+    | '/_app/p/$projectId/archive/$entryId'
     | '/_app/p/$projectId/local-seo/$trackerId'
     | '/_app/p/$projectId/rank-tracking/$configId'
     | '/_app/p/$projectId/reports/$reportId'
@@ -1213,6 +1238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPProjectIdDomainRouteImport
       parentRoute: typeof AppPProjectIdRouteRoute
     }
+    '/_app/p/$projectId/history': {
+      id: '/_app/p/$projectId/history'
+      path: '/history'
+      fullPath: '/p/$projectId/history'
+      preLoaderRoute: typeof AppPProjectIdHistoryRouteImport
+      parentRoute: typeof AppPProjectIdRouteRoute
+    }
     '/_app/p/$projectId/keywords': {
       id: '/_app/p/$projectId/keywords'
       path: '/keywords'
@@ -1296,6 +1328,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/p/$projectId/ai-visibility/research'
       preLoaderRoute: typeof AppPProjectIdAiVisibilityResearchRouteImport
       parentRoute: typeof AppPProjectIdAiVisibilityRoute
+    }
+    '/_app/p/$projectId/archive/$entryId': {
+      id: '/_app/p/$projectId/archive/$entryId'
+      path: '/archive/$entryId'
+      fullPath: '/p/$projectId/archive/$entryId'
+      preLoaderRoute: typeof AppPProjectIdArchiveEntryIdRouteImport
+      parentRoute: typeof AppPProjectIdRouteRoute
     }
     '/_app/p/$projectId/audit/': {
       id: '/_app/p/$projectId/audit/'
@@ -1495,6 +1534,7 @@ interface AppPProjectIdRouteRouteChildren {
   AppPProjectIdBrandLookupRoute: typeof AppPProjectIdBrandLookupRoute
   AppPProjectIdContextRoute: typeof AppPProjectIdContextRoute
   AppPProjectIdDomainRoute: typeof AppPProjectIdDomainRoute
+  AppPProjectIdHistoryRoute: typeof AppPProjectIdHistoryRoute
   AppPProjectIdKeywordsRoute: typeof AppPProjectIdKeywordsRoute
   AppPProjectIdLocalSeoRoute: typeof AppPProjectIdLocalSeoRouteWithChildren
   AppPProjectIdPromptExplorerRoute: typeof AppPProjectIdPromptExplorerRoute
@@ -1504,6 +1544,7 @@ interface AppPProjectIdRouteRouteChildren {
   AppPProjectIdSearchPerformanceRoute: typeof AppPProjectIdSearchPerformanceRoute
   AppPProjectIdSettingsRoute: typeof AppPProjectIdSettingsRouteWithChildren
   AppPProjectIdIndexRoute: typeof AppPProjectIdIndexRoute
+  AppPProjectIdArchiveEntryIdRoute: typeof AppPProjectIdArchiveEntryIdRoute
   AppPProjectIdReportsReportIdRoute: typeof AppPProjectIdReportsReportIdRoute
   AppPProjectIdReportsTemplatesRoute: typeof AppPProjectIdReportsTemplatesRoute
   AppPProjectIdAuditIndexRoute: typeof AppPProjectIdAuditIndexRoute
@@ -1517,6 +1558,7 @@ const AppPProjectIdRouteRouteChildren: AppPProjectIdRouteRouteChildren = {
   AppPProjectIdBrandLookupRoute: AppPProjectIdBrandLookupRoute,
   AppPProjectIdContextRoute: AppPProjectIdContextRoute,
   AppPProjectIdDomainRoute: AppPProjectIdDomainRoute,
+  AppPProjectIdHistoryRoute: AppPProjectIdHistoryRoute,
   AppPProjectIdKeywordsRoute: AppPProjectIdKeywordsRoute,
   AppPProjectIdLocalSeoRoute: AppPProjectIdLocalSeoRouteWithChildren,
   AppPProjectIdPromptExplorerRoute: AppPProjectIdPromptExplorerRoute,
@@ -1526,6 +1568,7 @@ const AppPProjectIdRouteRouteChildren: AppPProjectIdRouteRouteChildren = {
   AppPProjectIdSearchPerformanceRoute: AppPProjectIdSearchPerformanceRoute,
   AppPProjectIdSettingsRoute: AppPProjectIdSettingsRouteWithChildren,
   AppPProjectIdIndexRoute: AppPProjectIdIndexRoute,
+  AppPProjectIdArchiveEntryIdRoute: AppPProjectIdArchiveEntryIdRoute,
   AppPProjectIdReportsReportIdRoute: AppPProjectIdReportsReportIdRoute,
   AppPProjectIdReportsTemplatesRoute: AppPProjectIdReportsTemplatesRoute,
   AppPProjectIdAuditIndexRoute: AppPProjectIdAuditIndexRoute,

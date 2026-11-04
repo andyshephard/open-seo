@@ -18,7 +18,9 @@ vi.mock("cloudflare:workers", () => ({
     R2: {
       get: async (key: string) => {
         const value = mocks.cache.get(key);
-        return value === undefined ? null : { text: async () => value };
+        return value === undefined
+          ? null
+          : { text: async () => value, uploaded: new Date() };
       },
       put: async (key: string, value: string) => mocks.cache.set(key, value),
     },

@@ -15,14 +15,23 @@ vi.mock("cloudflare:workers", () => ({
 }));
 vi.mock("@/server/lib/r2-cache", async (importOriginal) => ({
   ...(await importOriginal<typeof r2CacheModule>()),
-  getCached: async (key: string) => mocks.cache.get(key) ?? null,
+  getCachedEntry: async (key: string) =>
+    mocks.cache.has(key)
+      ? { value: mocks.cache.get(key), storedAt: "2026-10-01T00:00:00.000Z" }
+      : null,
   setCached: async (key: string, value: unknown) => {
     mocks.cache.set(key, value);
   },
 }));
-vi.mock("@/server/lib/dataforseo", () => ({
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: vi.fn(),
+  readArchivedView: vi.fn(),
+}));
+vi.mock("@/server/lib/dataforseo", async () => ({
   createDataforseoClient: mocks.createDataforseoClient,
   SERP_ANALYSIS_DEPTH: 20,
+  serpSnapshotItemSchema: (await import("@/server/lib/dataforseo/serp"))
+    .serpSnapshotItemSchema,
 }));
 vi.mock("@/server/features/projects/services/ProjectService", () => ({
   ProjectService: {
@@ -55,6 +64,12 @@ describe("get_serp_results", () => {
       locationCode: 2840,
       languageCode: "en",
     });
+  });
+
+  it("promises reuse only of SERPs it can reuse", () => {
+    // Rank checks stop crawling at the tracked domain, so their pages are
+    // never handed to this tool.
+    expect(getSerpResultsTool.config.description).not.toMatch(/rank check/);
   });
 
   it("crawls and returns rows to the requested depth", async () => {

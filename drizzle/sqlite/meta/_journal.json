@@ -442,6 +442,55 @@
       "when": 1792713962596,
       "tag": "0062_bind_api_keys_to_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1793295380862,
+      "tag": "0063_early_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1793295512460,
+      "tag": "0064_mushy_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "6",
+      "when": 1793295985273,
+      "tag": "0065_sticky_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1793296047654,
+      "tag": "0066_hot_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1793296049707,
+      "tag": "0067_robust_cloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1793297446923,
+      "tag": "0068_export_written_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1793298860806,
+      "tag": "0069_export_deletions",
+      "breakpoints": true
     }
   ]
 }

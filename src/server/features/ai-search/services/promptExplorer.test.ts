@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getCached, setCached, buildCacheKey } from "@/server/lib/r2-cache";
+import {
+  getCached,
+  getCachedEntry,
+  setCached,
+  buildCacheKey,
+} from "@/server/lib/r2-cache";
 import { promptExplorerInputSchema } from "@/types/schemas/ai-search";
 import type { LlmResponseResult } from "@/server/lib/dataforseoLlmSchemas";
 import { explorePrompt, extractCitations } from "./promptExplorer";
@@ -17,7 +22,13 @@ vi.mock("@/server/lib/r2-cache", () => ({
   AI_SEARCH_PROMPT_CACHE_NAMESPACE: "ai-search-prompt",
   buildCacheKey: vi.fn(async () => "cache-key"),
   getCached: vi.fn(async () => null),
+  getCachedEntry: vi.fn(async () => null),
   setCached: vi.fn(async () => {}),
+}));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: async () => false,
+  archiveParams: () => ({}),
+  readArchivedView: async () => null,
 }));
 
 // DataForSEO's LLM Responses payload nests references as untyped
@@ -209,8 +220,10 @@ describe("Prompt Explorer countries", () => {
 
   it("keeps country-specific cached answers separate and restores their hint", async () => {
     const cache = new Map<string, unknown>();
-    vi.mocked(getCached).mockImplementation(
-      async (key) => cache.get(key) ?? null,
+    vi.mocked(getCachedEntry).mockImplementation(async (key) =>
+      cache.has(key)
+        ? { value: cache.get(key), storedAt: "2026-10-01T00:00:00.000Z" }
+        : null,
     );
     vi.mocked(setCached).mockImplementation(async (key, value) => {
       cache.set(key, value);

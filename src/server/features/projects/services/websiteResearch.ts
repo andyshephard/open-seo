@@ -6,6 +6,11 @@ import {
   tool,
 } from "ai";
 import { z } from "zod";
+import {
+  readCachedLookup,
+  storeLookupResult,
+} from "@/server/features/research-history/services/cachedLookup";
+import { RESEARCH_FRESHNESS_SECONDS } from "@/server/lib/r2-cache";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import {
   billResearchSpend,
@@ -31,6 +36,7 @@ import {
   WEBSITE_UNREADABLE_MESSAGE,
   websiteResearchSchema,
 } from "@/types/schemas/projectWebsite";
+import { generatedAiTopicSchema } from "@/types/schemas/aiPromptSuggestions";
 import { normalizeAiSuggestion } from "@/shared/ai-prompt-suggestions";
 import { ProjectContextRepository } from "@/server/features/project-context/repositories/ProjectContextRepository";
 import { AiVisibilityRepository } from "@/server/features/ai-visibility/repositories/AiVisibilityRepository";
@@ -109,6 +115,18 @@ export async function researchWebsite(
   };
   if (!missingOverview && !missingCompetitors && !missingTopics)
     return websiteResearchSchema.parse(preserved);
+  // A draft researched for the same gaps in the last week is reused, so a
+  // dismissed review or a repeated setup doesn't pay for the run again.
+  const draftLookup = {
+    kind: "website_research" as const,
+    target: domain,
+    params: { missingOverview, missingCompetitors, missingTopics },
+    market,
+    ttlSeconds: RESEARCH_FRESHNESS_SECONDS.aiSearch,
+    schema: websiteResearchSchema,
+  };
+  const draft = await readCachedLookup(customer, draftLookup);
+  if (draft) return draft.value;
   // Each field is independent: saved context supplies the evidence, and the
   // model only receives output fields and tools for the missing information.
   const spend: ResearchSpend[] = [];
@@ -140,8 +158,8 @@ export async function researchWebsite(
       : {}),
     ...(missingTopics
       ? {
-          suggestedTopics:
-            websiteResearchSchema.shape.suggestedTopics.length(5),
+          // Topic names are checked by websiteResearchSchema after generation.
+          suggestedTopics: z.array(generatedAiTopicSchema).length(5),
           // Checked after generation, so a malformed extra keyword is dropped
           // instead of failing a run that is already billed.
           suggestedKeywords: z.array(z.string()),
@@ -393,6 +411,7 @@ export async function researchWebsite(
           "A competitor could not be verified. Please try again.",
         );
     }
+    await storeLookupResult(customer, draftLookup, research);
     return research;
   } finally {
     if (contextUsage.contextCredits > 0)

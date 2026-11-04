@@ -5,7 +5,6 @@ import {
   MAX_TASKS_PER_POST,
 } from "@/server/lib/dataforseo";
 import type {
-  createDataforseoClient,
   PostedRankCheckTask,
   RankCheckResult,
   RankCheckTaskInput,
@@ -14,44 +13,36 @@ import { AppError } from "@/server/lib/errors";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
 import { KEYWORDS_PER_BATCH } from "@/shared/rank-tracking";
 import { pgStep } from "@/server/workflows/pgStep";
+import {
+  archiveSerps,
+  mapResultsToSnapshotRows,
+  reuseSharedSerps,
+  type CheckContext,
+  type KeywordEntry,
+  type RankCheckResultWithDevice,
+} from "@/server/workflows/rankCheckSerpReuse";
+
+export {
+  archiveSerps,
+  mapResultsToSnapshotRows,
+  type CheckContext,
+  type RankCheckResultWithDevice,
+};
+/**
+ * Drops the archived results page from results a step returns: the workflow
+ * engine persists step output (capped at 1 MiB), and a full page per task
+ * would blow that cap at the 500-task collect size. Archive first.
+ */
+function withoutSerpItems(
+  results: RankCheckResultWithDevice[],
+): RankCheckResultWithDevice[] {
+  return results.map((result) => ({ ...result, serpItems: [] }));
+}
 
 const SINGLE_ATTEMPT_STEP_CONFIG = {
   retries: { limit: 0, delay: "1 second" as const },
   timeout: "2 minutes" as const,
 };
-
-type KeywordEntry = { id: string; keyword: string };
-export type RankCheckResultWithDevice = RankCheckResult & {
-  device: "desktop" | "mobile";
-};
-
-export function mapResultsToSnapshotRows(
-  runId: string,
-  results: RankCheckResultWithDevice[],
-) {
-  return results.map((r) => ({
-    runId,
-    trackingKeywordId: r.keywordId,
-    keyword: r.keyword,
-    device: r.device,
-    position: r.position,
-    url: r.url,
-    serpFeatures:
-      r.serpFeatures.length > 0 ? JSON.stringify(r.serpFeatures) : null,
-  }));
-}
-
-export interface CheckContext {
-  client: ReturnType<typeof createDataforseoClient>;
-  keywords: KeywordEntry[];
-  devices: RankTrackingConfig["devices"];
-  serpDepth: number;
-  domain: string;
-  locationCode: number;
-  languageCode: string;
-  locationName?: string;
-  runId: string;
-}
 
 /** Expand keywords into one task input per keyword/device pair. */
 export function expandToTaskInputs(
@@ -83,8 +74,11 @@ export function expandToTaskInputs(
  */
 async function checkBatchLive(
   ctx: CheckContext,
-  tasks: RankCheckTaskInput[],
+  batch: RankCheckTaskInput[],
 ): Promise<number> {
+  const tasks = await reuseSharedSerps(ctx, batch);
+  const reusedCount = batch.length - tasks.length;
+  if (tasks.length === 0) return reusedCount;
   let settled: PromiseSettledResult<RankCheckResult>[];
   try {
     settled = await ctx.client.serp.rankCheckBatch(
@@ -132,8 +126,9 @@ async function checkBatchLive(
     await RankTrackingRepository.insertSnapshots(
       mapResultsToSnapshotRows(ctx.runId, results),
     );
+    await archiveSerps(ctx, results);
   }
-  return results.length;
+  return reusedCount + results.length;
 }
 
 /**
@@ -248,7 +243,11 @@ async function fetchQueuedRound(
           `[rank-check] ${ctx.runId} task ${task.taskId} failed: ${result.value.message}`,
         );
       } else {
-        completed.push({ ...result.value.result, device: task.device });
+        completed.push({
+          ...result.value.result,
+          device: task.device,
+          taskId: task.taskId,
+        });
       }
     });
   }
@@ -317,7 +316,10 @@ export async function runQueuedTasks(
           if (onCollected && fetched.completed.length > 0) {
             await onCollected(fetched.completed);
           }
-          return fetched;
+          return {
+            ...fetched,
+            completed: withoutSerpItems(fetched.completed),
+          };
         },
       );
       collected.push(...outcome.completed);
@@ -341,23 +343,25 @@ export async function runQueuedCheck(
   step: WorkflowStep,
   ctx: CheckContext,
 ): Promise<void> {
-  await runQueuedTasks(
+  // A results page another tracker bought today answers its pair for free;
+  // only the rest are posted to the queue.
+  const taskInputs = await pgStep(
     step,
-    ctx,
-    expandToTaskInputs(ctx.keywords, ctx.devices),
-    "",
-    async (results) => {
-      await RankTrackingRepository.insertSnapshots(
-        mapResultsToSnapshotRows(ctx.runId, results),
-      );
-      // Progress for the UI; finalize recounts from the DB anyway.
-      const snapshots = await RankTrackingRepository.getSnapshotsForRun(
-        ctx.runId,
-      );
-      await RankTrackingRepository.updateRun(ctx.runId, {
-        keywordsChecked: new Set(snapshots.map((s) => s.trackingKeywordId))
-          .size,
-      });
-    },
+    "reuse-shared-serps",
+    SINGLE_ATTEMPT_STEP_CONFIG,
+    () => reuseSharedSerps(ctx, expandToTaskInputs(ctx.keywords, ctx.devices)),
   );
+  await runQueuedTasks(step, ctx, taskInputs, "", async (results) => {
+    await RankTrackingRepository.insertSnapshots(
+      mapResultsToSnapshotRows(ctx.runId, results),
+    );
+    await archiveSerps(ctx, results);
+    // Progress for the UI; finalize recounts from the DB anyway.
+    const snapshots = await RankTrackingRepository.getSnapshotsForRun(
+      ctx.runId,
+    );
+    await RankTrackingRepository.updateRun(ctx.runId, {
+      keywordsChecked: new Set(snapshots.map((s) => s.trackingKeywordId)).size,
+    });
+  });
 }

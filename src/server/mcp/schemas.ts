@@ -27,3 +27,24 @@ export const languageCodeSchema = z
   .describe(
     "Language code (e.g. 'en', 'es', 'vi'). Defaults to the project's default market language (see list_projects).",
   );
+
+/**
+ * Reuse rules shared by paid research tools. Stored results inside the
+ * freshness window are returned free; these options tighten or skip that.
+ */
+export const freshnessInputSchema = {
+  refresh: z
+    .boolean()
+    .optional()
+    .describe(
+      "true buys a live copy even when a stored result is still fresh. Leave unset to reuse stored data.",
+    ),
+  maxAgeDays: z
+    .number()
+    .min(0)
+    .max(365)
+    .optional()
+    .describe(
+      "Only reuse a stored result at most this many days old (default: the tool's freshness window).",
+    ),
+};

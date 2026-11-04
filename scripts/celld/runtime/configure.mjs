@@ -54,6 +54,8 @@ const allowed = [
   "OPENROUTER_MODEL",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
+  // Turns on the research export API with AUTH_MODE=local_noauth.
+  "OPENSEO_EXPORT_KEY",
 ];
 config.vars = {
   ...secrets,

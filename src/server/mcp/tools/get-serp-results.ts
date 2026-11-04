@@ -1,13 +1,9 @@
-import { waitUntil } from "cloudflare:workers";
 import { z } from "zod";
-import {
-  createDataforseoClient,
-  SERP_ANALYSIS_DEPTH,
-} from "@/server/lib/dataforseo";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import { SERP_ANALYSIS_DEPTH } from "@/server/lib/dataforseo";
+import { getSerpSnapshot } from "@/server/features/keywords/services/research/serpSnapshot";
 import { mcpResponse } from "@/server/mcp/formatters";
 import { buildProjectMeta } from "@/server/mcp/context";
-import { serpSchema, serpItemSchema } from "@/shared/mcp-contracts";
+import { serpSchema, type serpItemSchema } from "@/shared/mcp-contracts";
 import { withMcpProjectAuth } from "@/server/mcp/project-auth";
 import { resolveMarket } from "@/shared/keyword-locations";
 import { assertLocalResearchLocation } from "@/server/features/keywords/services/research/local-volume";
@@ -21,12 +17,9 @@ import {
 import {
   languageCodeSchema,
   locationCodeSchema,
+  freshnessInputSchema,
   projectIdSchema,
 } from "@/server/mcp/schemas";
-
-// A repeat within this window is answered from the saved rows, uncharged, so a
-// caller that lost a response can call again instead of paying twice.
-const SERP_RESULTS_CACHE_TTL_SECONDS = 12 * 60 * 60;
 
 type SerpItem = z.infer<typeof serpItemSchema>;
 
@@ -86,6 +79,7 @@ const inputSchema = {
     .describe(
       "How many SERP rows to crawl per keyword — a multiple of 10 from 10 to 100, default 20. Google has no offset, so a deeper crawl re-fetches the top too: each additional 10 adds ~2.5 credits per keyword. Only raise it when you need ranks past the top 20.",
     ),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -95,7 +89,7 @@ export const getSerpResultsTool = {
   config: {
     title: "Get Google SERP results",
     description:
-      "Fetch live Google organic search results for 1-10 keywords. Use this to inspect who ranks for a query, verify competitors, compare SERPs across keywords, or gather source URLs before content planning. Returns the top `depth` result rows per keyword (default 20). `rank` counts every SERP element (ads, People Also Ask, ...); `organicRank` counts organic results only and matches rank tracker positions. Charges credits per keyword: ~5 each at the default depth 20, and each additional 10 of depth adds ~2.5. A keyword fetched in this project in the last 12 hours with the same market, device, and depth returns those rows again at no charge once the original call has finished, so if a response is lost, wait a minute and repeat the same call. Per-keyword errors don't fail the batch.",
+      "Fetch live Google organic search results for 1-10 keywords. Use this to inspect who ranks for a query, verify competitors, compare SERPs across keywords, or gather source URLs before content planning. Returns the top `depth` result rows per keyword (default 20). `rank` counts every SERP element (ads, People Also Ask, ...); `organicRank` counts organic results only and matches rank tracker positions. Charges credits per keyword: ~5 each at the default depth 20, and each additional 10 of depth adds ~2.5. A SERP fetched for the same keyword, market and device in the last 24 hours (by the app or an agent, at the same or a deeper depth) is reused at no charge; pass refresh: true to buy a live copy. Past SERPs are in list_research_archive (kind serp_analysis), free. Per-keyword errors don't fail the batch.",
     inputSchema,
     outputSchema: serpSchema,
     annotations: {
@@ -105,7 +99,6 @@ export const getSerpResultsTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: Args, context) => {
-    const client = createDataforseoClient(context.billing);
     const depth = args.depth ?? SERP_ANALYSIS_DEPTH;
     const results = await Promise.all(
       args.queries.map(async (q) => {
@@ -122,38 +115,20 @@ export const getSerpResultsTool = {
               q.locationName,
             );
           }
-          const cacheKey = await buildCacheKey("mcp:serp-results", {
-            organizationId: context.billing.organizationId,
-            projectId: args.projectId,
-            keyword: q.keyword,
-            ...market,
-            locationName: q.locationName,
-            depth,
-            // Omitted for desktop, explicit or default, so desktop keys match
-            // rows cached before the device option existed.
-            device: q.device === "mobile" ? "mobile" : undefined,
-          });
-          const cached = z
-            .array(serpItemSchema)
-            .safeParse(await getCached(cacheKey));
-          if (cached.success) {
-            return {
+          const snapshot = await getSerpSnapshot(
+            {
               keyword: q.keyword,
-              ok: true as const,
-              items: cached.data,
-              ...scope,
-            };
-          }
-
-          const items = await client.serp.live({
-            keyword: q.keyword,
-            ...market,
-            locationName: q.locationName,
-            depth,
-            device: q.device,
-          });
+              ...market,
+              locationName: q.locationName,
+              depth,
+              device: q.device,
+              refresh: args.refresh,
+              maxAgeDays: args.maxAgeDays,
+            },
+            context.billing,
+          );
           // Trim noise — return only essentials per item.
-          const trimmed = items.slice(0, depth).map((item) => ({
+          const trimmed = snapshot.items.slice(0, depth).map((item) => ({
             type: item.type,
             rank: item.rank_absolute ?? item.rank_group ?? null,
             organicRank:
@@ -163,20 +138,6 @@ export const getSerpResultsTool = {
             domain: item.domain ?? null,
             description: item.description ?? null,
           }));
-          // DataForSEO reports "no results" transiently; don't pin that for
-          // the whole window. waitUntil, not void: workerd cancels
-          // unregistered pending I/O once the response is sent.
-          if (trimmed.length > 0) {
-            waitUntil(
-              setCached(
-                cacheKey,
-                trimmed,
-                SERP_RESULTS_CACHE_TTL_SECONDS,
-              ).catch((error) => {
-                console.error("mcp.serp-results.cache-write failed:", error);
-              }),
-            );
-          }
           return {
             keyword: q.keyword,
             ok: true as const,

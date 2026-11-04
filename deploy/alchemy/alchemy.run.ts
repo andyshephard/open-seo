@@ -102,7 +102,12 @@ const makeResources = (stage: string, usesD1: boolean) => {
       : {}),
     R2: Cloudflare.R2.Bucket("R2", {
       name: prod ? PROD_NAMES.r2 : `open-seo-r2-${stage}`,
-      // Expire cached DataForSEO responses. Prod's lifecycle rules are
+      // Backstop expiry for cached DataForSEO responses; the app's daily sweep
+      // (src/server/lib/r2-cache-sweep.ts) deletes each one when its own TTL
+      // passes. 90 days is the longest TTL any cache writer sets (the
+      // dashboard's last-good copy; keyword research is reused for 30), so
+      // this never removes an entry a read could still use. It was 7 days,
+      // which cut 30-day keyword reuse to a week. Prod's lifecycle rules are
       // dashboard-managed; its props stay omitted so alchemy leaves them be.
       ...(prod
         ? {}
@@ -112,7 +117,7 @@ const makeResources = (stage: string, usesD1: boolean) => {
                 id: "dataforseo-cache-expiry",
                 prefix: "dataforseo-cache/",
                 deleteObjectsTransition: {
-                  condition: { type: "Age", maxAge: 7 * 24 * 60 * 60 },
+                  condition: { type: "Age", maxAge: 90 * 24 * 60 * 60 },
                 },
               },
             ],
@@ -283,6 +288,9 @@ const dataEnv = {
   META_PIXEL_ID: optionalVar("META_PIXEL_ID"),
   META_CONVERSIONS_API_TOKEN: optionalSecret("META_CONVERSIONS_API_TOKEN"),
   GDPR_ERASURE_SECRET: optionalSecret("GDPR_ERASURE_SECRET"),
+  // The export API key for the modes without accounts (local_noauth,
+  // cloudflare_access); unset, the export stays off there.
+  OPENSEO_EXPORT_KEY: optionalSecret("OPENSEO_EXPORT_KEY"),
   LOOPS_API_KEY: optionalSecret("LOOPS_API_KEY"),
   LOOPS_TRANSACTIONAL_VERIFY_EMAIL_ID: optionalVar(
     "LOOPS_TRANSACTIONAL_VERIFY_EMAIL_ID",

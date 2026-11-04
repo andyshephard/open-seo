@@ -363,6 +363,12 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
       try {
         const checkContext = {
           client,
+          billingCustomer: {
+            ...billingCustomer,
+            projectId,
+            origin: trigger === "scheduled" ? ("schedule" as const) : undefined,
+          },
+          configId,
           keywords,
           devices,
           serpDepth,

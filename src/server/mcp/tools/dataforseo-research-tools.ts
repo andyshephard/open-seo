@@ -1,9 +1,12 @@
 /* eslint-disable max-lines */
 import { firstBy, sort } from "remeda";
 import { z } from "zod";
+import { RESEARCH_FRESHNESS_SECONDS } from "@/server/lib/r2-cache";
+import { archiveParams } from "@/server/features/research-history/services/researchArchive";
+import { cachedLookup } from "@/server/features/research-history/services/cachedLookup";
+import { getKeywordMetrics } from "@/server/features/keywords/services/keywordMetricsStore";
 import {
   createDataforseoClient,
-  fetchKeywordMetricsForList,
   type KeywordMetricRow,
 } from "@/server/lib/dataforseo";
 import { buildProjectMeta } from "@/server/mcp/context";
@@ -36,6 +39,7 @@ import {
 } from "@/server/lib/market";
 import {
   DEFAULT_LOCATION_CODE,
+  freshnessInputSchema,
   languageCodeSchema,
   locationCodeSchema,
   projectIdSchema,
@@ -224,6 +228,7 @@ const getRankedKeywordsInputSchema = {
     .max(1000)
     .optional()
     .describe("Rows to skip for pagination."),
+  ...freshnessInputSchema,
 } as const;
 
 const searchLocalBusinessesInputSchema = {
@@ -277,6 +282,7 @@ const searchLocalBusinessesInputSchema = {
     .max(1000)
     .optional()
     .describe("Rows to skip for pagination."),
+  ...freshnessInputSchema,
 } as const;
 
 const localSearchTypeSchema = z.enum(["maps", "local_finder"]);
@@ -306,6 +312,7 @@ const getLocalSerpResultsInputSchema = {
     .optional()
     .describe("Number of results to fetch (1-100). Defaults to 20."),
   languageCode: languageCodeSchema.optional(),
+  ...freshnessInputSchema,
 } as const;
 
 const getGoogleBusinessQuestionsInputSchema = {
@@ -320,6 +327,7 @@ const getGoogleBusinessQuestionsInputSchema = {
     .optional()
     .describe("Maximum Q&A rows to fetch (1-100). Defaults to 20."),
   languageCode: languageCodeSchema.optional(),
+  ...freshnessInputSchema,
 } as const;
 
 const findSerpCompetitorsInputSchema = {
@@ -376,6 +384,7 @@ const findSerpCompetitorsInputSchema = {
     .max(1000)
     .optional()
     .describe("Rows to skip for pagination."),
+  ...freshnessInputSchema,
 } as const;
 
 const keywordMetricsSortSchema = z.enum([
@@ -407,6 +416,7 @@ const getKeywordMetricsInputSchema = {
   sortBy: keywordMetricsSortSchema
     .optional()
     .describe("Sort order for returned rows. Defaults to search_volume."),
+  ...freshnessInputSchema,
 } as const;
 
 type Market = z.infer<typeof marketSchema>;
@@ -891,6 +901,9 @@ export const getRankedKeywordsTool = {
   },
   handler: withMcpProjectAuth(async (args: GetRankedKeywordsArgs, context) => {
     const client = createDataforseoClient(context.billing);
+    type RankedKeywordsResult = Awaited<
+      ReturnType<typeof client.domain.rankedKeywords>
+    >;
     // Legacy includeSubdomains only ever selected between whole-host scopes
     // for bare domains; for page URLs it meant exact-page results. Mapping it
     // to domain/subdomains for a URL target would silently drop the path.
@@ -909,23 +922,39 @@ export const getRankedKeywordsTool = {
       : parsedDefault;
     const scopeFilter = buildRankedKeywordsScopeFilter(target);
     const market = resolveMarketSelector(args, context.project);
-    const keywords = await client.domain.rankedKeywords({
-      target: target.hostname,
-      locationCode: market.locationCode,
-      languageCode: market.languageCode,
-      limit: args.limit ?? 50,
-      offset: args.offset,
-      orderBy: sortOrderByRankedMode(args.sortBy),
-      filters: buildRankedKeywordFilters(
-        {
-          minSearchVolume: args.minSearchVolume,
-          maxRank: args.maxRank,
-          excludeBrandTerms: args.excludeBrandTerms,
-        },
-        scopeFilter,
-      ),
-      itemTypes: args.resultTypes,
-    });
+    const lookup = await cachedLookup(
+      context.billing,
+      {
+        kind: "ranked_keywords",
+        target: target.display,
+        params: { ...archiveParams(args), scope: target.scope },
+        market,
+        ttlSeconds: RESEARCH_FRESHNESS_SECONDS.domain,
+        schema: z.custom<RankedKeywordsResult>(),
+        isEmpty: (value) => value.items.length === 0,
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
+      },
+      () =>
+        client.domain.rankedKeywords({
+          target: target.hostname,
+          locationCode: market.locationCode,
+          languageCode: market.languageCode,
+          limit: args.limit ?? 50,
+          offset: args.offset,
+          orderBy: sortOrderByRankedMode(args.sortBy),
+          filters: buildRankedKeywordFilters(
+            {
+              minSearchVolume: args.minSearchVolume,
+              maxRank: args.maxRank,
+              excludeBrandTerms: args.excludeBrandTerms,
+            },
+            scopeFilter,
+          ),
+          itemTypes: args.resultTypes,
+        }),
+    );
+    const keywords = lookup.value;
 
     const rankedRows = keywords.items.map(toRankedKeywordRow);
     const targetLabel = `${target.display} (scope: ${target.scope})`;
@@ -971,16 +1000,35 @@ export const searchLocalBusinessesTool = {
   handler: withMcpProjectAuth(
     async (args: SearchLocalBusinessesArgs, context) => {
       const client = createDataforseoClient(context.billing);
-      const rows = await client.business.businessListings({
-        categories: args.categories,
-        title: args.query,
-        locationCoordinate: formatBusinessLocationCoordinate(args.near),
-        isClaimed: args.isClaimed,
-        filters: buildLocalBusinessFilters(args),
-        orderBy: localBusinessOrderBy(args.sortBy),
-        limit: args.limit ?? 20,
-        offset: args.offset,
-      });
+      const rows = (
+        await cachedLookup(
+          context.billing,
+          {
+            kind: "local_businesses",
+            target: args.query ?? args.categories?.join(", ") ?? "businesses",
+            params: archiveParams(args),
+            ttlSeconds: RESEARCH_FRESHNESS_SECONDS.local,
+            schema:
+              z.custom<
+                Awaited<ReturnType<typeof client.business.businessListings>>
+              >(),
+            isEmpty: (value) => value.length === 0,
+            refresh: args.refresh,
+            maxAgeDays: args.maxAgeDays,
+          },
+          () =>
+            client.business.businessListings({
+              categories: args.categories,
+              title: args.query,
+              locationCoordinate: formatBusinessLocationCoordinate(args.near),
+              isClaimed: args.isClaimed,
+              filters: buildLocalBusinessFilters(args),
+              orderBy: localBusinessOrderBy(args.sortBy),
+              limit: args.limit ?? 20,
+              offset: args.offset,
+            }),
+        )
+      ).value;
       const businesses = rows.map((row) =>
         pickRowFields(row, LOCAL_BUSINESS_ROW_FIELDS),
       );
@@ -1018,18 +1066,34 @@ export const getLocalSerpResultsTool = {
   handler: withMcpProjectAuth(
     async (args: GetLocalSerpResultsArgs, context) => {
       const client = createDataforseoClient(context.billing);
-      const rows = await client.serp.local({
-        keyword: args.keyword,
-        locationCoordinate: formatLocalSerpCoordinate({
-          ...args.near,
-          zoom: args.near.zoom ?? DEFAULT_LOCAL_SERP_ZOOM,
-        }),
-        languageCode: args.languageCode ?? context.project.languageCode,
-        searchType: args.searchType ?? "maps",
-        device: args.device ?? "mobile",
-        depth: args.depth ?? 20,
-        searchPlaces: false,
-      });
+      const rows = (
+        await cachedLookup(
+          context.billing,
+          {
+            kind: "local_serp",
+            target: args.keyword,
+            params: archiveParams(args),
+            ttlSeconds: RESEARCH_FRESHNESS_SECONDS.serp,
+            schema: z.custom<Awaited<ReturnType<typeof client.serp.local>>>(),
+            isEmpty: (value) => value.length === 0,
+            refresh: args.refresh,
+            maxAgeDays: args.maxAgeDays,
+          },
+          () =>
+            client.serp.local({
+              keyword: args.keyword,
+              locationCoordinate: formatLocalSerpCoordinate({
+                ...args.near,
+                zoom: args.near.zoom ?? DEFAULT_LOCAL_SERP_ZOOM,
+              }),
+              languageCode: args.languageCode ?? context.project.languageCode,
+              searchType: args.searchType ?? "maps",
+              device: args.device ?? "mobile",
+              depth: args.depth ?? 20,
+              searchPlaces: false,
+            }),
+        )
+      ).value;
       const results = rows.map((row) =>
         pickRowFields(row, LOCAL_SERP_ROW_FIELDS),
       );
@@ -1068,13 +1132,32 @@ export const getGoogleBusinessQuestionsTool = {
     async (args: GetGoogleBusinessQuestionsArgs, context) => {
       const identifier = resolveBusinessIdentifier(args);
       const client = createDataforseoClient(context.billing);
-      const rows = await client.business.questionsAnswers({
-        // The questions endpoint shares the cid:/place_id: keyword prefixes.
-        keyword: businessIdentifierKeyword(identifier),
-        locationCoordinate: formatBusinessDataCoordinate(args.near),
-        languageCode: args.languageCode ?? context.project.languageCode,
-        depth: args.depth ?? 20,
-      });
+      const rows = (
+        await cachedLookup(
+          context.billing,
+          {
+            kind: "business_questions",
+            target: businessIdentifierKeyword(identifier),
+            params: archiveParams(args),
+            ttlSeconds: RESEARCH_FRESHNESS_SECONDS.local,
+            schema:
+              z.custom<
+                Awaited<ReturnType<typeof client.business.questionsAnswers>>
+              >(),
+            isEmpty: (value) => value.length === 0,
+            refresh: args.refresh,
+            maxAgeDays: args.maxAgeDays,
+          },
+          () =>
+            client.business.questionsAnswers({
+              // The questions endpoint shares the cid:/place_id: keyword prefixes.
+              keyword: businessIdentifierKeyword(identifier),
+              locationCoordinate: formatBusinessDataCoordinate(args.near),
+              languageCode: args.languageCode ?? context.project.languageCode,
+              depth: args.depth ?? 20,
+            }),
+        )
+      ).value;
       const questions = rows.map(trimBusinessQuestionRow);
 
       const header = `Fetched ${questions.length} Google Business Q&A rows for ${businessIdentifierKeyword(identifier)}.`;
@@ -1111,15 +1194,35 @@ export const findSerpCompetitorsTool = {
     async (args: FindSerpCompetitorsArgs, context) => {
       const client = createDataforseoClient(context.billing);
       const market = resolveMarketSelector(args, context.project);
-      const competitors = await client.labs.serpCompetitors({
-        keywords: args.keywords,
-        locationCode: market.locationCode,
-        languageCode: market.languageCode,
-        itemTypes: args.resultTypes ?? ["organic", "local_pack"],
-        includeSubdomains: args.includeSubdomains,
-        limit: args.limit ?? 50,
-        offset: args.offset,
-      });
+      const competitors = (
+        await cachedLookup(
+          context.billing,
+          {
+            kind: "serp_competitors",
+            target: args.keywords.join(", "),
+            params: archiveParams(args),
+            market,
+            ttlSeconds: RESEARCH_FRESHNESS_SECONDS.domain,
+            schema:
+              z.custom<
+                Awaited<ReturnType<typeof client.labs.serpCompetitors>>
+              >(),
+            isEmpty: (value) => value.length === 0,
+            refresh: args.refresh,
+            maxAgeDays: args.maxAgeDays,
+          },
+          () =>
+            client.labs.serpCompetitors({
+              keywords: args.keywords,
+              locationCode: market.locationCode,
+              languageCode: market.languageCode,
+              itemTypes: args.resultTypes ?? ["organic", "local_pack"],
+              includeSubdomains: args.includeSubdomains,
+              limit: args.limit ?? 50,
+              offset: args.offset,
+            }),
+        )
+      ).value;
       const excludedDomains = args.excludeDomains ?? [];
       const filtered =
         excludedDomains.length === 0
@@ -1154,7 +1257,7 @@ export const getKeywordMetricsTool = {
   config: {
     title: "Get keyword metrics",
     description:
-      "Hydrate up to 700 known keywords with search volume, keyword difficulty (KD), search intent, CPC, competition, and monthly trends in a single call. Use it to score candidate or known keywords — including Search Console striking-distance queries — by real demand and ranking difficulty. For countries served from Google Ads data (e.g. Iceland), KD and intent are null. Charges credits.",
+      "Hydrate up to 700 known keywords with search volume, keyword difficulty (KD), search intent, CPC, competition, and monthly trends in a single call. Use it to score candidate or known keywords — including Search Console striking-distance queries — by real demand and ranking difficulty. For countries served from Google Ads data (e.g. Iceland), KD and intent are null. Keywords this project already has metrics for from the last 30 days (from any keyword research, refresh or earlier call) are returned free; only the rest are charged. Pass refresh: true to buy all of them again.",
     inputSchema: getKeywordMetricsInputSchema,
     outputSchema: z.looseObject({
       keywords: z.array(looseObjectOutputSchema),
@@ -1171,14 +1274,19 @@ export const getKeywordMetricsTool = {
     // Assert against the RESOLVED pair: an explicit language with an omitted
     // location must validate against the project's default location.
     assertLanguageForLocation(locationCode, languageCode);
-    const client = createDataforseoClient(context.billing);
-    const metrics = await fetchKeywordMetricsForList(client, {
-      keywords: args.keywords,
-      locationCode,
-      languageCode,
-      includeClickstreamData: args.includeClickstreamData ?? false,
-      creditFeature: "keyword_research",
-    });
+    const metrics = await getKeywordMetrics(
+      {
+        projectId: args.projectId,
+        keywords: args.keywords,
+        locationCode,
+        languageCode,
+        includeClickstreamData: args.includeClickstreamData ?? false,
+        creditFeature: "keyword_research",
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
+      },
+      context.billing,
+    );
     const rows = sortKeywordMetricRows(
       metrics.map(toMcpKeywordMetricRow),
       args.sortBy ?? "search_volume",

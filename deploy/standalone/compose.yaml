@@ -66,6 +66,7 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OPENSEO_EXPORT_KEY: ${OPENSEO_EXPORT_KEY:-}
     volumes: [config:/config, web-config:/web-config]
     depends_on:
       runtime: { condition: service_started }

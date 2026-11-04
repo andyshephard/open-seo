@@ -34,6 +34,7 @@ import { sweepDubReferredOrganizations } from "@/server/referrals/dub";
 import { maybeSendSelfHostHeartbeat } from "@/server/lib/self-host-telemetry";
 import { handleGdprStorageErasure } from "@/server/gdpr/storage-erasure";
 import { GDPR_STORAGE_ERASURE_PATH } from "@/shared/gdpr-erasure";
+import { EXPORT_PATH_PREFIX } from "@/shared/research-export";
 import { handleOperatorRequest } from "@/server/standalone/admin";
 import { handleImport, isLegacyImportActive } from "@/server/standalone/import";
 import { hasOperatorSecret } from "@/server/standalone/operator-auth";
@@ -211,6 +212,14 @@ async function handleAppRequest(
     );
   }
 
+  // Read-only research history export, authenticated by its own key in every
+  // mode (never by a session), so it sits ahead of the OAuth wrapper.
+  if (pathname.startsWith(EXPORT_PATH_PREFIX)) {
+    return import("@/server/features/research-history/services/researchExport").then(
+      ({ handleResearchExport }) => handleResearchExport(publicRequest),
+    );
+  }
+
   if (pathname === GDPR_STORAGE_ERASURE_PATH) {
     return handleGdprStorageErasure(publicRequest, env);
   }
@@ -266,6 +275,25 @@ export default {
     // A legacy Docker import owns the database until it finishes.
     if (hasOperatorSecret() && (await isLegacyImportActive())) return;
     if (controller.cron === MCP_OAUTH_PURGE_CRON) {
+      // Daily copy of Search Console and GA4 history, in every deployment mode.
+      try {
+        await withPgClient(async () => {
+          const { runDailySearchHistorySync } =
+            await import("@/server/features/research-history/services/searchHistorySync");
+          await runDailySearchHistorySync();
+        });
+      } catch (err) {
+        console.error("[cron] Search history sync failed:", err);
+      }
+      // Expired provider cache objects, in every mode: the standalone bucket
+      // has no lifecycle rules to remove them.
+      try {
+        const { sweepExpiredCache } =
+          await import("@/server/lib/r2-cache-sweep");
+        console.log("[cron] swept provider cache", await sweepExpiredCache());
+      } catch (err) {
+        console.error("[cron] Provider cache sweep failed:", err);
+      }
       const authMode = getAuthMode(env.AUTH_MODE);
       // Only the modes with their own accounts run the OAuth provider (and
       // have OAUTH_KV bound).
@@ -322,6 +350,11 @@ export default {
         await runScheduledAiVisibility();
       }),
       withPgClient(() => sendFirstAuditEmails()),
+      withPgClient(async () => {
+        const { runScheduledResearchSnapshots } =
+          await import("@/server/features/research-history/services/researchSnapshots");
+        await runScheduledResearchSnapshots();
+      }),
     ]);
     for (const result of checks)
       if (result.status === "rejected") throw result.reason;

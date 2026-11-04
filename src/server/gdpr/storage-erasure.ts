@@ -7,6 +7,7 @@ import { captureServerError } from "@/server/lib/posthog";
 import { deleteR2Prefix } from "@/server/lib/r2";
 import { DashboardCacheService } from "@/server/features/dashboard/services/DashboardCacheService";
 import { deleteProjectAiObjects } from "@/server/features/ai-visibility/services/aiVisibilityStorage";
+import { deleteProjectArchiveObjects } from "@/server/features/research-history/services/researchArchive";
 import {
   DUB_REFERRED_ORG_KV_PREFIX,
   DUB_REFERRED_USER_KV_PREFIX,
@@ -236,10 +237,15 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
   let aiVisibilityObjects = 0;
   let searchConsoleCacheObjects = 0;
   let siteAuditObjects = 0;
+  let researchArchiveObjects = 0;
   for (const projectId of payload.aiVisibilityProjectIds) {
     aiVisibilityObjects += await deleteProjectAiObjects(env.R2, projectId);
     searchConsoleCacheObjects +=
       await DashboardCacheService.deleteGscCache(projectId);
+    researchArchiveObjects += await deleteProjectArchiveObjects(
+      env.R2,
+      projectId,
+    );
     // Lighthouse files a best-effort audit deletion missed: their database
     // rows, and so their keys in r2Keys, are already gone.
     siteAuditObjects += await deleteR2Prefix(
@@ -270,6 +276,7 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
     aiVisibilityObjects,
     searchConsoleCacheObjects,
     siteAuditObjects,
+    researchArchiveObjects,
     googleRevocations,
   };
 }

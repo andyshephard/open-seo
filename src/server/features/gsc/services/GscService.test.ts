@@ -37,6 +37,9 @@ const mocks = vi.hoisted(() => {
     })),
     upsert: vi.fn(),
     getByProjectId: vi.fn(),
+    deleteByProjectId: vi.fn(),
+    deleteGscCache: vi.fn(),
+    deleteSearchConsoleCopies: vi.fn(),
   };
 });
 
@@ -51,8 +54,16 @@ vi.mock("@/server/features/gsc/repositories/GscConnectionRepository", () => ({
   GscConnectionRepository: {
     upsert: mocks.upsert,
     getByProjectId: mocks.getByProjectId,
+    deleteByProjectId: mocks.deleteByProjectId,
   },
 }));
+vi.mock("@/server/features/dashboard/services/DashboardCacheService", () => ({
+  DashboardCacheService: { deleteGscCache: mocks.deleteGscCache },
+}));
+vi.mock(
+  "@/server/features/research-history/services/googleDataErasure",
+  () => ({ deleteSearchConsoleCopies: mocks.deleteSearchConsoleCopies }),
+);
 
 const baseInput = {
   projectId: "p1",
@@ -61,10 +72,57 @@ const baseInput = {
   userId: "u1",
 };
 
+function gscConnected(siteUrl: string, gscAccountId: string | null) {
+  return {
+    projectId: "p1",
+    siteUrl,
+    gscAccountId,
+    connectedByUserId: "u1",
+  };
+}
+
 describe("GscService.setSite", () => {
   beforeEach(() => {
     mocks.state.selectRows = [{ id: "grant-a", accountId: "sub-a" }];
+    mocks.getByProjectId.mockResolvedValue(null);
+    mocks.deleteSearchConsoleCopies.mockClear();
+    mocks.deleteGscCache.mockClear();
+    mocks.listSites.mockResolvedValue([
+      { siteUrl: "https://x/", permissionLevel: "siteOwner" },
+      { siteUrl: "https://y/", permissionLevel: "siteOwner" },
+    ]);
+    mocks.upsert.mockResolvedValue({ siteUrl: "https://x/" });
   });
+
+  it.each([
+    ["the same property", "https://x/", "sub-a"],
+    ["a legacy mapping of the same property", "https://x/", null],
+  ])("keeps the stored history when re-picking %s", async (_l, site, acct) => {
+    mocks.getByProjectId.mockResolvedValue(gscConnected(site, acct));
+
+    await GscService.setSite({ ...baseInput, siteUrl: "https://x/" });
+
+    expect(mocks.deleteSearchConsoleCopies).not.toHaveBeenCalled();
+    expect(mocks.deleteGscCache).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["another property", "https://y/", "sub-a"],
+    ["another Google account", "https://x/", "sub-b"],
+  ])(
+    "deletes the stored history before switching to %s",
+    async (_l, site, acct) => {
+      mocks.getByProjectId.mockResolvedValue(gscConnected(site, acct));
+
+      await GscService.setSite({ ...baseInput, siteUrl: "https://x/" });
+
+      expect(mocks.deleteSearchConsoleCopies).toHaveBeenCalledWith("p1");
+      expect(mocks.deleteGscCache).toHaveBeenCalledWith("p1");
+      expect(
+        mocks.deleteSearchConsoleCopies.mock.invocationCallOrder[0],
+      ).toBeLessThan(mocks.upsert.mock.invocationCallOrder.at(-1) ?? 0);
+    },
+  );
 
   it("upserts a verified property with the selected grant and userinfo email", async () => {
     mocks.listSites.mockResolvedValue([
@@ -309,5 +367,30 @@ describe("GscService.getPerformance", () => {
       rowLimit: 25000,
     });
     expect(result.request.rowLimit).toBe(25000);
+  });
+});
+
+describe("GscService.disconnect", () => {
+  it("deletes the stored history and the cache before the connection", async () => {
+    mocks.deleteSearchConsoleCopies.mockClear();
+    await GscService.disconnect({ projectId: "p1" });
+
+    expect(mocks.deleteByProjectId).toHaveBeenCalledWith("p1");
+    expect(mocks.deleteGscCache).toHaveBeenCalledWith("p1");
+    // Before, so a failure leaves a retryable disconnect; after, for a sync
+    // that wrote in between.
+    const [first, second] =
+      mocks.deleteSearchConsoleCopies.mock.invocationCallOrder;
+    const unmapped = mocks.deleteByProjectId.mock.invocationCallOrder[0];
+    expect(first).toBeLessThan(unmapped);
+    expect(second).toBeGreaterThan(unmapped);
+  });
+
+  it("keeps the connection when deleting the stored history fails", async () => {
+    mocks.deleteByProjectId.mockClear();
+    mocks.deleteSearchConsoleCopies.mockRejectedValueOnce(new Error("D1"));
+
+    await expect(GscService.disconnect({ projectId: "p1" })).rejects.toThrow();
+    expect(mocks.deleteByProjectId).not.toHaveBeenCalled();
   });
 });

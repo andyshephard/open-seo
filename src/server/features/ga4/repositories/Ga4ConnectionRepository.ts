@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { ga4Connections } from "@/db/schema";
+import { ga4Connections, projects } from "@/db/schema";
 
 export type Ga4Connection = typeof ga4Connections.$inferSelect;
 
@@ -59,8 +59,21 @@ async function deleteByProjectId(projectId: string): Promise<void> {
     .where(eq(ga4Connections.projectId, projectId));
 }
 
+/** Every connection on a live (unarchived) project, for the daily history sync. */
+async function listActive() {
+  return db
+    .select({
+      connection: ga4Connections,
+      organizationId: projects.organizationId,
+    })
+    .from(ga4Connections)
+    .innerJoin(projects, eq(projects.id, ga4Connections.projectId))
+    .where(and(isNull(projects.archivedAt)));
+}
+
 export const Ga4ConnectionRepository = {
   getByProjectId,
+  listActive,
   upsert,
   deleteByProjectId,
 };

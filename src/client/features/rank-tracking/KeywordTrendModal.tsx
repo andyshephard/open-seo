@@ -34,6 +34,7 @@ import { getRankKeywordHistory } from "@/serverFunctions/rank-tracking";
 import type { RankKeywordHistoryPoint } from "@/serverFunctions/rank-tracking";
 import { LOCATIONS } from "@/client/features/keywords/locations";
 import { formatLocationLabel } from "@/shared/keyword-locations";
+import { RankCheckSerpHistory } from "./RankCheckSerpHistory";
 import { googleSerpUrl } from "@/shared/google-serp-url";
 import { csvChange, DeviceRankCell } from "./RankTrackingTableParts";
 import {
@@ -336,6 +337,14 @@ export function KeywordTrendModal({
             )
           }
         </QueryState>
+
+        <RankCheckSerpHistory
+          projectId={projectId}
+          configId={configId}
+          trackingKeywordId={target.trackingKeywordId}
+          keyword={target.keyword}
+          domain={domain}
+        />
 
         <DialogFooter showCloseButton />
       </DialogContent>

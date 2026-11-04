@@ -22,7 +22,14 @@ import {
   requireOpenRouterAccess,
   type OpenRouterAccess,
 } from "@/server/lib/openrouter";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  buildCacheKey,
+  getCached,
+  getCachedEntry,
+  RESEARCH_FRESHNESS_SECONDS,
+  setCached,
+} from "@/server/lib/r2-cache";
+import { archiveLookup } from "@/server/features/research-history/services/researchArchive";
 import {
   getOptionalEnvValue,
   isHostedServerAuthMode,
@@ -39,7 +46,7 @@ import { AiVisibilityRepository as repo } from "../repositories/AiVisibilityRepo
 import { getTracker } from "./aiVisibilityState";
 
 /** The provider refreshes prompt data monthly; one paid call per day is enough. */
-const RESEARCH_TTL_SECONDS = 24 * 60 * 60;
+const RESEARCH_TTL_SECONDS = RESEARCH_FRESHNESS_SECONDS.aiSearch;
 const RESEARCH_LIMIT = 100;
 // Enough of the answer to show which meaning of the keyword it is about.
 const RELEVANCE_ANSWER_CHARS = 300;
@@ -165,8 +172,24 @@ async function loadPrompts(
     organizationId: customer.organizationId,
     ...request,
   });
-  const cached = cachedResearchSchema.safeParse(await getCached(cacheKey));
-  if (cached.success) return cached.data;
+  const archive = (research: CachedResearch, fetchedAt: string) =>
+    research.prompts.length > 0
+      ? archiveLookup(customer, {
+          kind: "prompt_research",
+          target: request.topic,
+          viewKey: cacheKey,
+          params: { platform: request.platform },
+          market: request,
+          fetchedAt,
+          payload: research,
+        })
+      : Promise.resolve(false);
+  const cachedEntry = await getCachedEntry(cacheKey);
+  const cached = cachedResearchSchema.safeParse(cachedEntry?.value);
+  if (cachedEntry && cached.success) {
+    await archive(cached.data, cachedEntry.storedAt);
+    return cached.data;
+  }
 
   const client = createDataforseoClient(customer);
   // Answers often use the category words when the question doesn't. Short
@@ -212,6 +235,7 @@ async function loadPrompts(
       console.error("ai-visibility.prompt-research.cache-write-failed", error);
     }),
   );
+  await archive(research, new Date().toISOString());
   return research;
 }
 

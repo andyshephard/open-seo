@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SavedRunsList } from "@/client/features/research-history/SavedRunsList";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, Telescope } from "lucide-react";
@@ -60,6 +61,20 @@ export function PromptResearchPage({
           ) : undefined
         }
       />
+      {!keyword ? (
+        <SavedRunsList
+          projectId={projectId}
+          kinds={["prompt_research"]}
+          renderLink={(run, props) => (
+            <Link
+              to="/p/$projectId/ai-visibility/research"
+              params={{ projectId }}
+              search={{ q: run.target }}
+              {...props}
+            />
+          )}
+        />
+      ) : null}
       {!state?.configured ? (
         <EmptyState
           icon={Telescope}

@@ -13,6 +13,7 @@ import {
   languageCodeSchema,
   locationCodeSchema,
   projectIdSchema,
+  freshnessInputSchema,
 } from "@/server/mcp/schemas";
 import {
   RESEARCH_SCOPE_PARAM_DESCRIPTION,
@@ -37,6 +38,7 @@ const inputSchema = {
     .describe("Deprecated: use scope ('subdomains' or 'domain') instead."),
   locationCode: locationCodeSchema.optional(),
   languageCode: languageCodeSchema.optional(),
+  ...freshnessInputSchema,
 } as const;
 
 type Args = z.infer<z.ZodObject<typeof inputSchema>>;
@@ -46,7 +48,7 @@ export const getDomainOverviewTool = {
   config: {
     title: "Get domain overview",
     description:
-      "Returns a high-level view of a domain's organic footprint: estimated organic traffic, organic keyword count, backlinks, and referring domains. Use this first for domain research; for the detailed ranked-keyword list, call get_domain_keyword_suggestions next. Charges credits (~100-300 typical). Cached for 12 hours per domain.",
+      "Returns a high-level view of a domain's organic footprint: estimated organic traffic, organic keyword count, backlinks, and referring domains. Use this first for domain research; for the detailed ranked-keyword list, call get_domain_keyword_suggestions next. Backlinks and referring domains come from the latest stored backlinks lookup for the domain (null if it was never looked up; call get_backlinks_overview). Charges credits (~100-300 typical). Stored results are reused free inside the freshness window (7 days); pass refresh: true to buy a live copy, or maxAgeDays to accept only newer data. Before buying, check get_research_history (dated trends) and list_research_archive (every past result in full) — both free.",
     inputSchema,
     outputSchema: z
       .object({
@@ -87,6 +89,8 @@ export const getDomainOverviewTool = {
         scope,
         locationCode,
         languageCode,
+        refresh: args.refresh,
+        maxAgeDays: args.maxAgeDays,
       },
       context.billing,
     );

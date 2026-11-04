@@ -1,17 +1,21 @@
 import { z } from "zod";
 
-export const suggestedAiTopicSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(120)
+const topicName = z.string().trim().min(1).max(120);
+const topicNameDescription = "A succinct topic name, at most five words";
+// Model output schemas use this shape: Claude's structured output rejects the
+// range quantifier in the word-count pattern, so results are parsed with
+// suggestedAiTopicSchema after generation.
+export const generatedAiTopicSchema = z.object({
+  name: topicName.describe(topicNameDescription),
+  prompts: z.array(z.string().trim().min(1).max(500)).length(5),
+});
+export const suggestedAiTopicSchema = generatedAiTopicSchema.extend({
+  name: topicName
     .regex(
       /^\S+(?:\s+\S+){0,4}$/,
       "Generated topic names must contain five words or fewer.",
     )
-    .describe("A succinct topic name, at most five words"),
-  prompts: z.array(z.string().trim().min(1).max(500)).length(5),
+    .describe(topicNameDescription),
 });
 export const generateAiPromptsSchema = z.object({
   projectId: z.string().uuid(),

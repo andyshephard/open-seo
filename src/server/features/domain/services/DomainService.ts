@@ -1,5 +1,11 @@
 import { waitUntil } from "cloudflare:workers";
-import { buildCacheKey, getCached, setCached } from "@/server/lib/r2-cache";
+import {
+  buildCacheKey,
+  getCachedEntry,
+  RESEARCH_FRESHNESS_SECONDS,
+  setCached,
+  type CacheFreshness,
+} from "@/server/lib/r2-cache";
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";
@@ -11,6 +17,12 @@ import type { ResearchScope } from "@/shared/researchScope";
 import { mapKeywordItem } from "@/server/features/domain/services/domainKeywordMapper";
 import { getKeywordsPage } from "@/server/features/domain/services/domainKeywordsPage";
 import { getPagesPage } from "@/server/features/domain/services/domainPagesPage";
+import { captureDomainOverview } from "@/server/features/research-history/services/researchHistoryCapture";
+import { ResearchHistoryRepository } from "@/server/features/research-history/repositories/ResearchHistoryRepository";
+import {
+  archiveLookup,
+  readArchivedView,
+} from "@/server/features/research-history/services/researchArchive";
 
 // Lets a caller attribute spend to its own feature (e.g. the SAM agent). Applied
 // to the DataForSEO call, not the cache key, so cached results are shared
@@ -19,18 +31,29 @@ type MeteringOverrides = {
   creditFeature?: CreditFeature;
 };
 
-/** Domain overview data is refreshed every 12 hours. */
-const DOMAIN_OVERVIEW_TTL_SECONDS = 12 * 60 * 60;
-
 const domainOverviewResultSchema = z.object({
   domain: z.string(),
   organicTraffic: z.number().nullable(),
   organicKeywords: z.number().nullable(),
   backlinks: z.number().nullable(),
   referringDomains: z.number().nullable(),
+  // Ranking-position buckets for research history; absent in older entries.
+  top3Keywords: z.number().nullable().default(null),
+  top10Keywords: z.number().nullable().default(null),
   hasData: z.boolean(),
   fetchedAt: z.string(),
 });
+
+const suggestedKeywordsSchema = z.array(
+  z.object({
+    keyword: z.string(),
+    position: z.number().nullable(),
+    searchVolume: z.number().nullable(),
+    traffic: z.number().nullable(),
+    cpc: z.number().nullable(),
+    keywordDifficulty: z.number().nullable(),
+  }),
+);
 
 type DomainOverviewResult = z.infer<typeof domainOverviewResultSchema> & {
   /** Requested research scope, echoed for display. */
@@ -45,7 +68,8 @@ async function getOverview(
     scope?: ResearchScope;
     locationCode: number;
     languageCode: string;
-  },
+    asOf?: string;
+  } & CacheFreshness,
   billingCustomer: BillingCustomerContext,
   metering: MeteringOverrides = {},
 ): Promise<DomainOverviewResult> {
@@ -54,20 +78,34 @@ async function getOverview(
 
   // domain_rank_overview has no filters and always covers the hostname plus
   // all of its subdomains, so every scope shares one cache entry per hostname.
-  // Callers label the metrics as domain-wide for narrower scopes.
+  // Callers label the metrics as domain-wide for narrower scopes. Provider
+  // data doesn't vary by project, so every project in the org shares it.
   const cacheKey = await buildCacheKey("domain:overview", {
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     domain,
     locationCode: input.locationCode,
     languageCode: input.languageCode,
   });
 
-  const cachedRaw = await getCached(cacheKey);
-  const cached = domainOverviewResultSchema.safeParse(cachedRaw);
-  if (cached.success && cached.data.hasData) {
+  if (input.asOf)
+    return {
+      ...domainOverviewResultSchema.parse(
+        await readArchivedView(billingCustomer, cacheKey, input.asOf),
+      ),
+      scope: target.scope,
+      displayTarget: target.display,
+    };
+
+  const cachedEntry = await getCachedEntry(cacheKey, input);
+  const cached = domainOverviewResultSchema.safeParse(cachedEntry?.value);
+  if (cached.success) {
+    if (cached.data.hasData) {
+      await recordOverview(billingCustomer, input, cached.data);
+      await archiveOverview(billingCustomer, cacheKey, input, cached.data);
+    }
     return {
       ...cached.data,
+      ...(await storedBacklinkTotals(input.projectId, domain)),
       scope: target.scope,
       displayTarget: target.display,
     };
@@ -94,29 +132,105 @@ async function getOverview(
       ? Math.round(metrics.metrics.organic.count)
       : null;
 
+  const organic = metrics?.metrics?.organic;
+  const top3Keywords =
+    organic != null ? (organic.pos_1 ?? 0) + (organic.pos_2_3 ?? 0) : null;
+
   const stored: z.infer<typeof domainOverviewResultSchema> = {
     domain,
     organicTraffic,
     organicKeywords,
     backlinks: null,
     referringDomains: null,
+    top3Keywords,
+    top10Keywords:
+      top3Keywords != null ? top3Keywords + (organic?.pos_4_10 ?? 0) : null,
     hasData: organicKeywords != null && organicKeywords > 0,
     fetchedAt: nowIso,
   };
 
+  // waitUntil, not void: workerd cancels unregistered pending I/O once the
+  // response is sent, so a fire-and-forget put never persists the cache.
+  // Empty results are cached briefly so a new domain isn't re-bought on
+  // every view.
+  waitUntil(
+    setCached(
+      cacheKey,
+      stored,
+      stored.hasData
+        ? RESEARCH_FRESHNESS_SECONDS.domain
+        : RESEARCH_FRESHNESS_SECONDS.empty,
+    ).catch((error) => {
+      console.error("domain.overview.cache-write failed:", error);
+    }),
+  );
   if (stored.hasData) {
-    // waitUntil, not void: workerd cancels unregistered pending I/O once the
-    // response is sent, so a fire-and-forget put never persists the cache.
-    waitUntil(
-      setCached(cacheKey, stored, DOMAIN_OVERVIEW_TTL_SECONDS).catch(
-        (error) => {
-          console.error("domain.overview.cache-write failed:", error);
-        },
-      ),
-    );
+    await recordOverview(billingCustomer, input, stored);
+    await archiveOverview(billingCustomer, cacheKey, input, stored);
   }
 
-  return { ...stored, scope: target.scope, displayTarget: target.display };
+  return {
+    ...stored,
+    ...(await storedBacklinkTotals(input.projectId, domain)),
+    scope: target.scope,
+    displayTarget: target.display,
+  };
+}
+
+/**
+ * Backlink totals from the domain's latest stored backlinks lookup (free),
+ * since the rank overview carries none. Null when it was never looked up.
+ */
+async function storedBacklinkTotals(projectId: string, domain: string) {
+  const since = new Date(Date.now() - 90 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const latest = (
+    await ResearchHistoryRepository.listBacklinkSnapshots({
+      projectId,
+      domains: [domain],
+      includeSubdomains: true,
+      since,
+    })
+  ).at(-1);
+  return {
+    backlinks: latest?.backlinks ?? null,
+    referringDomains: latest?.referringDomains ?? null,
+  };
+}
+
+function archiveOverview(
+  billingCustomer: BillingCustomerContext,
+  viewKey: string,
+  market: { locationCode: number; languageCode: string },
+  overview: z.infer<typeof domainOverviewResultSchema>,
+) {
+  return archiveLookup(billingCustomer, {
+    kind: "domain_overview",
+    target: overview.domain,
+    viewKey,
+    params: {},
+    market,
+    fetchedAt: overview.fetchedAt,
+    payload: overview,
+  });
+}
+
+function recordOverview(
+  billingCustomer: BillingCustomerContext,
+  market: { locationCode: number; languageCode: string },
+  overview: z.infer<typeof domainOverviewResultSchema>,
+) {
+  return captureDomainOverview(billingCustomer, {
+    domain: overview.domain,
+    locationCode: market.locationCode,
+    languageCode: market.languageCode,
+    organicTraffic: overview.organicTraffic,
+    organicKeywords: overview.organicKeywords,
+    top3Keywords: overview.top3Keywords,
+    top10Keywords: overview.top10Keywords,
+    fetchedAt: overview.fetchedAt,
+  });
 }
 
 async function getSuggestedKeywords(
@@ -127,7 +241,8 @@ async function getSuggestedKeywords(
     languageCode: string;
     organizationId: string;
     projectId: string;
-  },
+    asOf?: string;
+  } & CacheFreshness,
   billingCustomer: BillingCustomerContext,
   metering: MeteringOverrides = {},
 ): Promise<
@@ -145,7 +260,6 @@ async function getSuggestedKeywords(
 
   const cacheKey = await buildCacheKey("domain:keyword-suggestions", {
     organizationId: billingCustomer.organizationId,
-    projectId: input.projectId,
     domain: target.hostname,
     scope: target.scope,
     path: target.path,
@@ -153,20 +267,30 @@ async function getSuggestedKeywords(
     languageCode: input.languageCode,
   });
 
-  const cachedRaw = await getCached(cacheKey);
-  const cached = z
-    .array(
-      z.object({
-        keyword: z.string(),
-        position: z.number().nullable(),
-        searchVolume: z.number().nullable(),
-        traffic: z.number().nullable(),
-        cpc: z.number().nullable(),
-        keywordDifficulty: z.number().nullable(),
-      }),
-    )
-    .safeParse(cachedRaw);
-  if (cached.success && cached.data.length > 0) {
+  if (input.asOf)
+    return suggestedKeywordsSchema.parse(
+      await readArchivedView(billingCustomer, cacheKey, input.asOf),
+    );
+
+  const archiveSuggestions = (
+    fetchedAt: string,
+    payload: z.infer<typeof suggestedKeywordsSchema>,
+  ) =>
+    archiveLookup(billingCustomer, {
+      kind: "domain_keyword_suggestions",
+      target: target.display,
+      viewKey: cacheKey,
+      params: { scope: target.scope },
+      market: input,
+      fetchedAt,
+      payload,
+    });
+
+  const cachedEntry = await getCachedEntry(cacheKey, input);
+  const cached = suggestedKeywordsSchema.safeParse(cachedEntry?.value);
+  if (cachedEntry && cached.success) {
+    if (cached.data.length > 0)
+      await archiveSuggestions(cachedEntry.storedAt, cached.data);
     return cached.data;
   }
 
@@ -200,18 +324,19 @@ async function getSuggestedKeywords(
       keywordDifficulty: item.keywordDifficulty,
     }));
 
-  if (keywords.length > 0) {
-    waitUntil(
-      setCached(cacheKey, keywords, DOMAIN_OVERVIEW_TTL_SECONDS).catch(
-        (error) => {
-          console.error(
-            "domain.keyword-suggestions.cache-write failed:",
-            error,
-          );
-        },
-      ),
-    );
-  }
+  if (keywords.length > 0)
+    await archiveSuggestions(new Date().toISOString(), keywords);
+  waitUntil(
+    setCached(
+      cacheKey,
+      keywords,
+      keywords.length > 0
+        ? RESEARCH_FRESHNESS_SECONDS.domain
+        : RESEARCH_FRESHNESS_SECONDS.empty,
+    ).catch((error) => {
+      console.error("domain.keyword-suggestions.cache-write failed:", error);
+    }),
+  );
 
   return keywords;
 }

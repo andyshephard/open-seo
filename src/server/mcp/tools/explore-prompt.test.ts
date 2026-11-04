@@ -42,7 +42,13 @@ vi.mock("@/server/lib/r2-cache", () => ({
   AI_SEARCH_PROMPT_CACHE_NAMESPACE: "ai-search-prompt",
   buildCacheKey: vi.fn(async () => "cache-key"),
   getCached: vi.fn(async () => null),
+  getCachedEntry: vi.fn(async () => null),
   setCached: vi.fn(async () => {}),
+}));
+vi.mock("@/server/features/research-history/services/researchArchive", () => ({
+  archiveLookup: async () => false,
+  archiveParams: () => ({}),
+  readArchivedView: async () => null,
 }));
 
 const projectId = "project_1";

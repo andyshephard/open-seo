@@ -21,6 +21,9 @@ export const getBacklinksOverview = createServerFn({
       {
         target: data.target,
         scope: data.scope,
+        asOf: data.asOf,
+        refresh: data.refresh,
+        maxAgeDays: data.maxAgeDays,
       },
       context,
     );

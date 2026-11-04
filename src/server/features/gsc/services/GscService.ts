@@ -28,6 +28,7 @@ import {
   type GscConnection,
 } from "@/server/features/gsc/repositories/GscConnectionRepository";
 import { DashboardCacheService } from "@/server/features/dashboard/services/DashboardCacheService";
+import { deleteSearchConsoleCopies } from "@/server/features/research-history/services/googleDataErasure";
 import type {
   GscSearchAnalyticsRequest,
   GscSearchAnalyticsRow,
@@ -209,7 +210,18 @@ async function setSite(input: {
   } catch {
     connectedAccountEmail = null;
   }
-  return GscConnectionRepository.upsert({
+  // Another property's (or Google account's) stored history must not mix
+  // with this one's: drop it, so the next sync backfills the new property.
+  const existing = await GscConnectionRepository.getByProjectId(
+    input.projectId,
+  );
+  const switching =
+    existing !== null &&
+    (existing.siteUrl !== input.siteUrl ||
+      (existing.gscAccountId ?? input.accountId) !== input.accountId ||
+      existing.connectedByUserId !== input.userId);
+  if (switching) await deleteGscCopies(input.projectId);
+  const connection = await GscConnectionRepository.upsert({
     projectId: input.projectId,
     organizationId: input.organizationId,
     siteUrl: input.siteUrl,
@@ -217,11 +229,24 @@ async function setSite(input: {
     gscAccountId: input.accountId,
     connectedAccountEmail,
   });
+  // A sync of the old property that was already writing stops at its next
+  // write; this clears anything it wrote before then.
+  if (switching) await deleteGscCopies(input.projectId);
+  return connection;
+}
+
+async function deleteGscCopies(projectId: string) {
+  await DashboardCacheService.deleteGscCache(projectId);
+  await deleteSearchConsoleCopies(projectId);
 }
 
 async function disconnect(input: { projectId: string }): Promise<void> {
+  // Copies first, so a failed delete leaves a connection to disconnect again;
+  // then again after, for anything an in-flight sync wrote in between (a
+  // sync stops at its next write once the connection is gone).
+  await deleteGscCopies(input.projectId);
   await GscConnectionRepository.deleteByProjectId(input.projectId);
-  await DashboardCacheService.deleteGscCache(input.projectId);
+  await deleteGscCopies(input.projectId);
 }
 
 /** Pass-through of GSC `searchAnalytics.query` for a project's connected property. */

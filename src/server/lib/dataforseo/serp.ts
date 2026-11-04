@@ -52,7 +52,7 @@ function stopCrawlOnTarget(targetDomain: string) {
 // etv / estimated_paid_traffic_cost / backlinks_info / rank_changes, which we
 // rely on. The fields survive deserialization (the SDK copies unknown keys), so
 // validating here is both our type-safety guard and how we read those fields.
-const serpSnapshotItemSchema = z
+export const serpSnapshotItemSchema = z
   .object({
     type: z.string(),
     rank_group: z.number().nullable().optional(),
@@ -132,6 +132,17 @@ export interface RankCheckResult {
   position: number | null;
   url: string | null;
   serpFeatures: string[];
+  /** The whole results page as checked, archived with the run. */
+  serpItems: RankCheckSerpItem[];
+}
+
+export interface RankCheckSerpItem {
+  type: string | null;
+  rankGroup: number | null;
+  rankAbsolute: number | null;
+  domain: string | null;
+  url: string | null;
+  title: string | null;
 }
 
 function buildRankCheckResult(
@@ -156,6 +167,14 @@ function buildRankCheckResult(
       : null,
     url: organicMatch?.url ?? null,
     serpFeatures: [...new Set(items.map((item) => item.type).filter(Boolean))],
+    serpItems: items.map((item) => ({
+      type: item.type ?? null,
+      rankGroup: item.rank_group ?? null,
+      rankAbsolute: item.rank_absolute ?? null,
+      domain: item.domain ?? null,
+      url: item.url ?? null,
+      title: item.title ?? null,
+    })),
   };
 }
 

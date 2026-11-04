@@ -19,12 +19,21 @@ const oauth = vi.hoisted(() => ({
   getGoogleAccessToken: vi.fn(),
   revokeGoogleToken: vi.fn(),
   deleteGscCache: vi.fn(),
+  deleteSearchConsoleCopies: vi.fn(),
+  deleteGa4Copies: vi.fn(),
 }));
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 vi.mock("./googleOAuth", () => oauth);
 vi.mock("@/server/features/dashboard/services/DashboardCacheService", () => ({
   DashboardCacheService: { deleteGscCache: oauth.deleteGscCache },
 }));
+vi.mock(
+  "@/server/features/research-history/services/googleDataErasure",
+  () => ({
+    deleteSearchConsoleCopies: oauth.deleteSearchConsoleCopies,
+    deleteGa4Copies: oauth.deleteGa4Copies,
+  }),
+);
 let client: Client;
 const directory = mkdtempSync(join(tmpdir(), "google-account-removal-"));
 let service: typeof ServiceModule.GoogleAccountService;
@@ -161,6 +170,24 @@ for (const provider of ["gsc", "ga4"] as const) {
       await service.remove(input);
       expect(await rows(table)).toEqual([]);
       expect(await rows("account")).toEqual([]);
+    });
+
+    it("deletes each unmapped project's stored copies", async () => {
+      await grant(providerId);
+      await mapping(provider, "p1");
+      await mapping(provider, "p3", "google-b");
+      const [erase, other] =
+        provider === "gsc"
+          ? [oauth.deleteSearchConsoleCopies, oauth.deleteGa4Copies]
+          : [oauth.deleteGa4Copies, oauth.deleteSearchConsoleCopies];
+      erase.mockClear();
+      other.mockClear();
+
+      await service.remove(input);
+
+      // Before unmapping (retryable) and after (an in-flight sync's writes).
+      expect(erase.mock.calls).toEqual([["p1"], ["p1"]]);
+      expect(other).not.toHaveBeenCalled();
     });
 
     it("preserves other accounts, the other integration, and Google sign-in", async () => {

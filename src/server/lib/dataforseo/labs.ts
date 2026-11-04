@@ -55,7 +55,13 @@ type RelatedKeywordItem = {
 };
 
 type LabsMetricsBlock = {
-  organic?: { etv?: number | null; count?: number | null } | null;
+  organic?: {
+    etv?: number | null;
+    count?: number | null;
+    pos_1?: number | null;
+    pos_2_3?: number | null;
+    pos_4_10?: number | null;
+  } | null;
   [key: string]: unknown;
 };
 
