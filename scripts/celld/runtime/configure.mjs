@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 const root = "/config";
 await mkdir(root, { recursive: true, mode: 0o700 });
@@ -45,6 +45,10 @@ if (
   url.password
 )
   throw new Error("BETTER_AUTH_URL must be an origin");
+// Start from an empty app dir: cp merges, so a file the new image dropped or
+// renamed (an old migration, say) would stay in the volume, and `celld d1
+// migrations apply` would run it again.
+await rm(`${root}/app`, { recursive: true, force: true });
 await cp("/opt/openseo", `${root}/app`, { recursive: true });
 const config = JSON.parse(await readFile(`${root}/app/wrangler.json`, "utf8"));
 const allowed = [
