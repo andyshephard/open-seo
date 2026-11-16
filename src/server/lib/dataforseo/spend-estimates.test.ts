@@ -136,11 +136,16 @@ describe("DataForSEO spend estimates", () => {
       pricedAt(dataforseoPricing.backlinks.referringDomains, { limit: 250 }),
     ],
     [
-      "live SERP at depth 30",
-      post("/v3/serp/google/organic/live/advanced", [
-        { keyword: "audio stories", depth: 30 },
-      ]),
-      pricedAt(dataforseoPricing.serp.live, {
+      "high-priority SERP reads at depth 30",
+      post(
+        "/v3/serp/google/organic/task_post",
+        Array.from({ length: 3 }, () => ({
+          keyword: "audio stories",
+          depth: 30,
+          priority: 2,
+        })),
+      ),
+      pricedAt(dataforseoPricing.serp.readsTaskPost, {
         keyword: "audio stories",
         depth: 30,
       }),

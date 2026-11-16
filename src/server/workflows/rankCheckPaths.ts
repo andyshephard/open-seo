@@ -15,7 +15,34 @@ import {
   mapResultsToSnapshotRows,
   reuseSharedSerps,
   type CheckContext,
-  /** Expand keywords into one task input per keyword/device pair. */
+  type KeywordEntry,
+  type RankCheckResultWithDevice,
+} from "@/server/workflows/rankCheckSerpReuse";
+
+export {
+  archiveSerps,
+  mapResultsToSnapshotRows,
+  type CheckContext,
+  type RankCheckResultWithDevice,
+};
+
+/**
+ * Drops the archived results page from results a step returns: the workflow
+ * engine persists step output (capped at 1 MiB), and a full page per task
+ * would blow that cap at the 500-task collect size. Archive first.
+ */
+function withoutSerpItems(
+  results: RankCheckResultWithDevice[],
+): RankCheckResultWithDevice[] {
+  return results.map((result) => ({ ...result, serpItems: [] }));
+}
+
+const SINGLE_ATTEMPT_STEP_CONFIG = {
+  retries: { limit: 0, delay: "1 second" as const },
+  timeout: "2 minutes" as const,
+};
+
+/** Expand keywords into one task input per keyword/device pair. */
 export function expandToTaskInputs(
   keywords: KeywordEntry[],
   devices: RankTrackingConfig["devices"],

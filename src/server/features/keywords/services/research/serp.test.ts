@@ -4,7 +4,7 @@ import type * as R2Cache from "@/server/lib/r2-cache";
 
 const mocks = vi.hoisted(() => ({
   assertLocalResearchLocation: vi.fn(async () => {}),
-  buildCacheKey: vi.fn(async () => "serp:analysis:key"),
+  buildCacheKey: vi.fn(async () => "serp:snapshot:key"),
   readMergedSerps:
     vi.fn<
       (
@@ -43,8 +43,10 @@ vi.mock("./serpReads", () => ({
   readMergedSerps: mocks.readMergedSerps,
 }));
 
-vi.mock("@/server/lib/dataforseo", () => ({
+vi.mock("@/server/lib/dataforseo", async () => ({
   SERP_ANALYSIS_DEPTH: 10,
+  serpSnapshotItemSchema: (await import("@/server/lib/dataforseo/serp"))
+    .serpSnapshotItemSchema,
 }));
 
 import { getSerpAnalysis } from "./serp";

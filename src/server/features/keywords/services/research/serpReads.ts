@@ -39,7 +39,12 @@ export type MergedSerpItem = SerpLiveItem & {
 };
 
 type MergedSerpOutcome =
-  | { status: "completed"; items: MergedSerpItem[] }
+  | {
+      status: "completed";
+      items: MergedSerpItem[];
+      /** A read is still running, so a repeat may merge in more rows. */
+      partial?: boolean;
+    }
   /** Nothing is back yet; the same query again collects it at no charge. */
   | { status: "processing" }
   | { status: "failed"; error: unknown };
@@ -161,7 +166,7 @@ async function collectMergedSerp(
         console.error("serp-reads.result-write failed:", error);
       });
     }
-    return { status: "completed", items };
+    return { status: "completed", items, ...(pending && { partial: true }) };
   }
   if (pending) return { status: "processing" };
 

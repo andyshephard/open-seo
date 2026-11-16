@@ -212,6 +212,7 @@ export const getSerpResultsTool = {
                   lookup.stored,
                   outcome.items,
                   context.billing,
+                  { partial: outcome.partial },
                 )
               ).items
             : outcome.items;

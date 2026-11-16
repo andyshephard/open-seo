@@ -7,6 +7,14 @@ import {
   serpKeywordCostMultiplier,
 } from "@/shared/rank-tracking";
 
+// The live endpoint's per-page rates. The app no longer posts live organic
+// SERPs (reads and rank checks use the task queue), but the cap still has to
+// hold an upper bound for any request core.ts sends, so these stay here.
+const LIVE_BASE_PAGE_COST_USD = 0.002;
+const LIVE_EXTRA_PAGE_COST_USD = 0.0015;
+// A task posted with priority 2 bills at twice the standard-queue rate.
+const TASK_PRIORITY_HIGH = 2;
+
 // Upper-bound USD for one DataForSEO request, read from the wire request itself
 // (path + posted tasks), for the monthly spend cap (spend-cap.ts). It is the
 // amount held against the cap before the call; the call then settles on the
@@ -109,11 +117,17 @@ function isFreePath(path: string): boolean {
 function serpOrganicUsd(task: Task, method: "live" | "queued"): number {
   const depth = Math.ceil(positive(task.depth, 10) / 10) * 10;
   const keyword = typeof task.keyword === "string" ? task.keyword : "";
-  const page =
-    costPerSerpAtDepth(depth, method) * serpKeywordCostMultiplier(keyword);
+  const pages = depth / 10;
+  const perPage =
+    method === "queued"
+      ? costPerSerpAtDepth(depth) *
+        (task.priority === TASK_PRIORITY_HIGH ? 2 : 1)
+      : LIVE_BASE_PAGE_COST_USD + (pages - 1) * LIVE_EXTRA_PAGE_COST_USD;
+  const page = perPage * serpKeywordCostMultiplier(keyword);
   // The async AI Overview load bills as much again as the first page.
   return task.load_async_ai_overview === true
-    ? page + costPerSerpAtDepth(10, method)
+    ? page +
+        (method === "queued" ? costPerSerpAtDepth(10) : LIVE_BASE_PAGE_COST_USD)
     : page;
 }
 

@@ -13,9 +13,11 @@ vi.mock(
     KeywordResearchRepository: {
       listSavedKeywordsByProject: mocks.listSavedKeywordsByProject,
       upsertKeywordMetric: mocks.upsertKeywordMetric,
+      listStoredKeywordMetrics: async () => [],
     },
   }),
 );
+vi.mock("cloudflare:workers", () => ({ env: {} }));
 vi.mock("@/server/lib/dataforseo", () => ({
   createDataforseoClient: vi.fn(),
   fetchKeywordMetricsForList: mocks.fetchKeywordMetricsForList,

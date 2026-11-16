@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- the research cache, archive and draft reuse added to upstream's file would otherwise push it past the limit */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Ai from "ai";
 import { z } from "zod";

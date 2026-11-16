@@ -11,9 +11,13 @@ const mocks = vi.hoisted(() => ({
   cache: new Map<string, unknown>(),
 }));
 
-vi.mock("cloudflare:workers", () => ({ env: {} }));
+vi.mock("cloudflare:workers", () => ({
+  env: {},
+  waitUntil: (p: Promise<unknown>) => void p.catch(() => undefined),
+}));
 vi.mock("@/server/lib/r2-cache", async (importOriginal) => ({
   ...(await importOriginal<typeof r2CacheModule>()),
+  getCached: async (key: string) => mocks.cache.get(key) ?? null,
   getCachedEntry: async (key: string) =>
     mocks.cache.has(key)
       ? { value: mocks.cache.get(key), storedAt: "2026-10-01T00:00:00.000Z" }
@@ -270,7 +274,7 @@ describe("get_serp_results", () => {
     expect(itemsOf(repeat)).toHaveLength(1);
   });
 
-  it("buys fresh reads after every read failed or came back empty", async () => {
+  it("buys fresh reads after every read failed, then caches an empty answer briefly", async () => {
     const reads: Record<string, object> = {
       t1: { status: "failed", message: "Internal Error." },
     };
@@ -284,8 +288,10 @@ describe("get_serp_results", () => {
     expect(textContent(empty)).toContain("(0 results)");
 
     reads.t1 = completed(organic(1, "a.com"));
-    await getSerpResultsTool.handler(args, toolContext);
+    const third = await getSerpResultsTool.handler(args, toolContext);
 
-    expect(post).toHaveBeenCalledTimes(3);
+    // The empty answer is cached briefly, so the third call is served from it.
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(textContent(third)).toContain("(0 results)");
   });
 });

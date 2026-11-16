@@ -1,21 +1,17 @@
 import { z } from "zod";
 
-const topicName = z.string().trim().min(1).max(120);
-const topicNameDescription = "A succinct topic name, at most five words";
-// Model output schemas use this shape: Claude's structured output rejects the
-// range quantifier in the word-count pattern, so results are parsed with
-// suggestedAiTopicSchema after generation.
-export const generatedAiTopicSchema = z.object({
-  name: topicName.describe(topicNameDescription),
-  prompts: z.array(z.string().trim().min(1).max(500)).length(5),
-});
-export const suggestedAiTopicSchema = generatedAiTopicSchema.extend({
-  name: topicName
+export const suggestedAiTopicSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
     .regex(
       /^\S+(?:\s+\S+){0,4}$/,
       "Generated topic names must contain five words or fewer.",
     )
-    .describe(topicNameDescription),
+    .describe("A succinct topic name, at most five words"),
+  prompts: z.array(z.string().trim().min(1).max(500)).length(5),
 });
 // What the model is asked for. Anthropic structured output cannot compile the
 // word-limit regex, so names are cut to five words after generation instead.

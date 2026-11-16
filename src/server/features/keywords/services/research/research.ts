@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- the research cache, archive and draft reuse added to upstream's file would otherwise push it past the limit */
 import { AppError } from "@/server/lib/errors";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { CreditFeature } from "@/shared/billing-credit-features";

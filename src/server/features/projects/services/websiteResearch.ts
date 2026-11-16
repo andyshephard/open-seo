@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- the research cache, archive and draft reuse added to upstream's file would otherwise push it past the limit */
 import {
   generateText,
   NoObjectGeneratedError,

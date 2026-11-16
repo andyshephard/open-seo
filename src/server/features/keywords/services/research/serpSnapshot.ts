@@ -33,7 +33,10 @@ const serpSnapshotSchema = z.object({
   // seenIn: how many of the merged reads showed the row; absent in snapshots
   // stored before reads were merged.
   items: z.array(
-    serpSnapshotItemSchema.extend({ seenIn: z.number().optional() }),
+    z.intersection(
+      serpSnapshotItemSchema,
+      z.object({ seenIn: z.number().optional() }),
+    ),
   ),
 });
 
@@ -145,6 +148,7 @@ export async function storeSerpSnapshot(
   lookup: SerpSnapshotLookup,
   items: MergedSerpItem[],
   billingCustomer: BillingCustomerContext,
+  { partial = false }: { partial?: boolean } = {},
 ): Promise<SerpSnapshot> {
   const snapshot: SerpSnapshot = {
     keyword: lookup.keyword,
@@ -158,6 +162,9 @@ export async function storeSerpSnapshot(
   // nothing for the rest of the TTL.
   if (items.length === 0 && (lookup.shallower?.items.length ?? 0) > 0)
     return snapshot;
+  // A read is still running: a repeat merges it in, which a cached snapshot
+  // would shadow for the rest of the TTL.
+  if (partial) return snapshot;
 
   // waitUntil, not void: workerd cancels unregistered pending I/O once the
   // response is sent, so a fire-and-forget put never persists the cache.
@@ -232,5 +239,7 @@ export async function getSerpSnapshot(
       "These search results are taking longer than usual.",
     );
   }
-  return storeSerpSnapshot(input, lookup, outcome.items, billingCustomer);
+  return storeSerpSnapshot(input, lookup, outcome.items, billingCustomer, {
+    partial: outcome.partial,
+  });
 }
