@@ -71,6 +71,7 @@ const SECTIONS = {
       "business_profile",
       "business_reviews",
       "business_updates",
+      "sitemap_snapshot",
     ],
   },
 } satisfies Record<

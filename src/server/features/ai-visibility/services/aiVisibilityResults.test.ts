@@ -4,6 +4,7 @@ import type { RunRow } from "../repositories/AiVisibilityRepository";
 import { aiPageResultsSchema } from "@/types/schemas/ai-visibility";
 import {
   loadAiAnswer,
+  loadAiCitationEvidence,
   loadAiPageResults,
   loadAiResults,
   loadAiSources,
@@ -235,6 +236,25 @@ describe("AI visibility results", () => {
         promptIds: ["prompt-0", "prompt-1"],
       },
       { url: "https://ahrefs.com/blog", ownership: "competitor" },
+    ]);
+  });
+
+  it("returns answered observations with their citations for classification", async () => {
+    await seedRun("baseline", [
+      {
+        markdown: "a",
+        mentioned: ["OpenSEO"],
+        sources: ["https://ahrefs.com/blog"],
+      },
+      { markdown: null, sources: ["https://example.com/ignored"] },
+    ]);
+    const evidence = await loadAiCitationEvidence({
+      ...query,
+      branded: "neutral",
+    });
+    expect(evidence.observations.map((o) => o.prompt)).toEqual(["Question 0?"]);
+    expect(evidence.sources.map((s) => s.url)).toEqual([
+      "https://ahrefs.com/blog",
     ]);
   });
 

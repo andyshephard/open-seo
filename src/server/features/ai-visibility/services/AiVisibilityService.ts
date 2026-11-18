@@ -9,6 +9,7 @@ import {
   loadAiAnswer,
   loadAiPageResults,
 } from "./aiVisibilityResults";
+import { classifyAiCitations } from "./aiCitationClasses";
 import { exportAiData } from "./aiVisibilityExport";
 import { loadAiTrend } from "./aiVisibilityTrend";
 import { listAiResearchKeywords, researchAiPrompts } from "./aiPromptResearch";
@@ -43,6 +44,7 @@ export const AiVisibilityService = {
   getResults: loadAiResults,
   getPageResults: loadAiPageResults,
   getSources: loadAiSources,
+  classifyCitations: classifyAiCitations,
   getTrend: loadAiTrend,
   getAnswer: loadAiAnswer,
   exportData: exportAiData,

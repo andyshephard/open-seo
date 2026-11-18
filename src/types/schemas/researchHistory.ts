@@ -34,6 +34,7 @@ export const RESEARCH_ARCHIVE_KINDS = [
   "ga4_landing_pages",
   "url_inspection",
   "website_research",
+  "sitemap_snapshot",
 ] as const;
 export type ResearchArchiveKind = (typeof RESEARCH_ARCHIVE_KINDS)[number];
 

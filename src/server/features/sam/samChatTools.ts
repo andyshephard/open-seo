@@ -13,6 +13,7 @@ import {
   getAiVisibilitySourcesTool,
   getAiVisibilityTrendTool,
   exportAiVisibilityDataTool,
+  classifyAiCitationSourcesTool,
 } from "@/server/mcp/tools/ai-visibility-tools";
 import { tool, type Tool, type ToolSet } from "ai";
 import { z, type ZodRawShape } from "zod";
@@ -416,6 +417,7 @@ export function buildSamMcpTools(
     get_ai_visibility_sources: adaptTool(getAiVisibilitySourcesTool),
     get_ai_visibility_trend: adaptTool(getAiVisibilityTrendTool),
     export_ai_visibility_data: adaptTool(exportAiVisibilityDataTool),
+    classify_ai_citation_sources: adaptTool(classifyAiCitationSourcesTool),
     create_rank_tracker: adaptTool(createRankTrackerTool),
     get_rank_tracker: adaptTool(getRankTrackerTool),
     get_rank_history: adaptTool(getRankHistoryTool),

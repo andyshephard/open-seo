@@ -13,6 +13,7 @@ import {
   getAiVisibilitySourcesTool,
   getAiVisibilityTrendTool,
   exportAiVisibilityDataTool,
+  classifyAiCitationSourcesTool,
 } from "@/server/mcp/tools/ai-visibility-tools";
 import {
   type CallToolResult,
@@ -53,6 +54,8 @@ import { removeRankTrackingKeywordsTool } from "@/server/mcp/tools/remove-rank-t
 import { pinRankTrackingKeywordsTool } from "@/server/mcp/tools/pin-rank-tracking-keywords";
 import { runRankTrackerTool } from "@/server/mcp/tools/run-rank-tracker";
 import { searchSerpLocationsTool } from "@/server/mcp/tools/search-serp-locations";
+import { clusterKeywordsBySerpTool } from "@/server/mcp/tools/cluster-keywords-by-serp";
+import { diffCompetitorSitemapsTool } from "@/server/mcp/tools/diff-competitor-sitemaps";
 import { getSerpResultsTool } from "@/server/mcp/tools/get-serp-results";
 import {
   getGoogleAnalyticsAudienceBreakdownTool,
@@ -285,6 +288,8 @@ export function registerOpenSeoTools(
   register(getBacklinksOverviewTool);
   register(getBacklinksProfileTool);
   register(getSerpResultsTool);
+  register(clusterKeywordsBySerpTool);
+  register(diffCompetitorSitemapsTool);
   register(searchSerpLocationsTool);
   register(getAiVisibilityTrackerTool);
   register(explorePromptTool);
@@ -301,6 +306,7 @@ export function registerOpenSeoTools(
   register(getAiVisibilitySourcesTool);
   register(getAiVisibilityTrendTool);
   register(exportAiVisibilityDataTool);
+  register(classifyAiCitationSourcesTool);
   register(createRankTrackerTool);
   register(getRankTrackerTool);
   register(getRankHistoryTool);

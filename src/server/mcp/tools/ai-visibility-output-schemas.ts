@@ -178,6 +178,30 @@ export const aiSourcesOutput = z.looseObject({
   groupBy: z.enum(["url", "domain"]),
   truncated: flag,
 });
+export const aiCitationClassesOutput = z.looseObject({
+  runId: nullableText,
+  coverage: coverage.extend({ noAnswer: count }),
+  appliedFilters: aiResultsOutput.shape.appliedFilters,
+  ownDomain: nullableText,
+  totalPages: count,
+  byType: z.record(z.string(), count),
+  rows: z.array(
+    z.looseObject({
+      url: text,
+      domain: text,
+      title: nullableText,
+      type: text,
+      action: text,
+      note: nullableText,
+      citationCount: count,
+      prompts: z.array(text),
+      engines: z.array(z.looseObject({ engine, citations: count })),
+      brandMentionedInAnswers: count,
+      brandMentioned: flag,
+    }),
+  ),
+  truncated: flag,
+});
 const rate = z.number().min(0).max(100).nullable();
 const trendCoverage = z.looseObject({
   runs: count,

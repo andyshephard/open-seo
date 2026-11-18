@@ -162,6 +162,26 @@ export const aiSourcesSchema = aiResultsSchema.extend({
   groupBy: z.enum(["url", "domain"]).default("url"),
   ownership: z.enum(["all", "own", "competitor", "other"]).default("all"),
 });
+export const aiCitationClassesSchema = aiResultsSchema
+  .omit({ cursor: true, includeHistory: true, competitorGap: true })
+  .extend({
+    limit: z.number().int().min(1).max(500).default(100),
+    type: z
+      .enum([
+        "own",
+        "competitor",
+        "listicle",
+        "reddit",
+        "youtube",
+        "forum",
+        "reference",
+        "news",
+        "app_store",
+        "other",
+      ])
+      .optional()
+      .describe("Only return pages of this type."),
+  });
 export const aiTrendSchema = aiProjectSchema.extend({
   days: z
     .union([z.literal(7), z.literal(28), z.literal(90)])
@@ -184,6 +204,7 @@ export type SetAiScheduleInput = z.infer<typeof setAiScheduleSchema>;
 export type RunAiCheckInput = z.infer<typeof runAiCheckSchema>;
 export type AiResultsInput = z.infer<typeof aiResultsSchema>;
 export type AiPageResultsInput = z.infer<typeof aiPageResultsSchema>;
+export type AiCitationClassesInput = z.infer<typeof aiCitationClassesSchema>;
 export type AiSourcesInput = z.infer<typeof aiSourcesSchema>;
 export type AiExportInput = z.infer<typeof aiExportSchema>;
 export type AiTrendInput = z.infer<typeof aiTrendSchema>;

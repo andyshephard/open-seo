@@ -28,6 +28,7 @@ export const ARCHIVE_KIND_LABELS: Record<string, string> = {
   ga4_landing_pages: "GA4 organic landing pages",
   url_inspection: "URL inspection",
   website_research: "Website research draft",
+  sitemap_snapshot: "Competitor sitemap snapshot",
 };
 
 export const ARCHIVE_ORIGIN_LABELS: Record<string, string> = {

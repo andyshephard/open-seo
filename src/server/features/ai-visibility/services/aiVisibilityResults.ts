@@ -288,6 +288,32 @@ function answerView(
   };
 }
 
+/**
+ * Every answered observation of the selected run and the pages each cited, for
+ * classifying citations. The same scope as loadAiSources, ungrouped.
+ */
+export async function loadAiCitationEvidence(
+  input: Omit<
+    AiResultsInput,
+    "cursor" | "limit" | "includeHistory" | "competitorGap"
+  >,
+) {
+  const { result, evidence } = await loadAiResultSet({
+    ...input,
+    includeHistory: false,
+    competitorGap: false,
+  });
+  const answered = result.rows.filter((row) => row.answerStatus === "answered");
+  const ids = new Set(answered.map((row) => row.id));
+  return {
+    runId: result.runId,
+    coverage: result.coverage,
+    appliedFilters: result.appliedFilters,
+    observations: answered,
+    sources: evidence.sources.filter((source) => ids.has(source.observationId)),
+  };
+}
+
 export async function loadAiSources(input: AiSourcesInput): Promise<AiSources> {
   // Pagination belongs to the source aggregation, never the underlying answers.
   const { result: first, evidence } = await loadAiResultSet(input);

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- one file holds every AI visibility tool definition */
 import { z } from "zod";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import type { AiVisibilityService } from "@/server/features/ai-visibility/services/AiVisibilityService";
@@ -20,6 +21,7 @@ import {
   aiResultsSchema,
   aiAnswerSchema,
   aiSourcesSchema,
+  aiCitationClassesSchema,
   aiExportSchema,
   aiTrendSchema,
 } from "@/types/schemas/ai-visibility";
@@ -31,6 +33,7 @@ import {
   aiResultsOutput,
   aiAnswerOutput,
   aiSourcesOutput,
+  aiCitationClassesOutput,
   aiExportOutput,
   aiTrendOutput,
   aiPromptResearchOutput,
@@ -399,4 +402,23 @@ export const exportAiVisibilityDataTool = defineAiTool({
   execute: (s, a, _b, baseUrl) => s.exportData(a, baseUrl),
   summarize: (d) =>
     `${d.format.toUpperCase()} export: ${d.url} (expires ${d.expiresAt}).`,
+});
+export const classifyAiCitationSourcesTool = defineAiTool({
+  name: "classify_ai_citation_sources",
+  title: "Classify AI citation sources",
+  input: aiCitationClassesSchema,
+  output: aiCitationClassesOutput,
+  readOnly: true,
+  path: "sources",
+  description:
+    'Classify every page AI answers cited in one tracking run (own, competitor, listicle, reddit, youtube, forum, reference, news, app_store, other) and attach the action each type calls for, such as pitching a listicle or replying in a Reddit thread. One row per cited page: citationCount (answers citing it, across prompts and engines), the prompts and engines, and whether your brand was named in those answers; sorted by citationCount. A competitor whose project-context notes, or a custom context section naming it, say "never" or "monitor only" gets the action "monitor only". The scope filters (runId, topic, engines, promptId, branded) work as in get_ai_visibility_sources; defaults to the latest baseline or scheduled run\'s neutral prompts. Uses no credits, and never crawls URLs or collects answers; read one run with get_ai_visibility_results first to choose a runId.',
+  execute: (s, a) => s.classifyCitations(a),
+  summarize: (d) =>
+    `${resultScopeNotice(d.appliedFilters.branded)} ${d.totalPages} cited pages classified: ${Object.entries(
+      d.byType,
+    )
+      .map(([type, count]) => `${count} ${type}`)
+      .join(
+        ", ",
+      )}. Showing ${d.rows.length}${d.truncated ? " (more available: raise limit or filter by type)" : ""}.`,
 });
