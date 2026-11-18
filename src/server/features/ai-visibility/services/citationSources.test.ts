@@ -10,12 +10,21 @@ const context: CitationClassifierContext = {
   competitors: [
     { domain: "nerdsip.com", name: "NerdSip", notes: null },
     { domain: "nibble.app", name: null, notes: null },
+    { domain: "app.io", name: null, notes: null },
+    { domain: "loud.example", name: null, notes: "Monitor-only: legal risk" },
   ],
   customSections: [
     {
       slug: "nerdsip-rule",
-      title: "NerdSip rule",
-      content: "Never write NerdSip alternatives content. We like cake.",
+      title: "NerdSip: monitor only",
+      content:
+        'Never write "NerdSip alternatives" content. We like cake. Also never mention NerdSip negatively.',
+    },
+    {
+      slug: "style",
+      title: "Style",
+      content:
+        "We never rank for nibble.app terms by accident. Never write app store descriptions here.",
     },
   ],
 };
@@ -77,7 +86,41 @@ describe("classifyCitation", () => {
       type: "competitor",
       action: "monitor only",
     });
-    expect(result.note).toContain("Never write NerdSip alternatives content");
+    expect(result.note).toContain("NerdSip: monitor only");
+  });
+
+  it("does not flag competitors on a bare 'never' or a short label inside another word", () => {
+    expect(classify("https://nibble.app/")).toMatchObject({
+      action: "comparison/alternatives page",
+    });
+    expect(classify("https://app.io/")).toMatchObject({
+      action: "comparison/alternatives page",
+    });
+  });
+
+  it("honours explicit monitor only in competitor notes", () => {
+    expect(classify("https://loud.example/")).toMatchObject({
+      action: "monitor only",
+    });
+  });
+
+  it("resolves monitor-only from the section title alone", () => {
+    const titleOnly = {
+      ...context,
+      customSections: [
+        {
+          slug: "x",
+          title: "NerdSip: monitor only",
+          content: "Reasons below.",
+        },
+      ],
+    };
+    expect(
+      classifyCitation(
+        { url: "https://nerdsip.com/", domain: "nerdsip.com", title: null },
+        titleOnly,
+      ),
+    ).toMatchObject({ action: "monitor only" });
   });
 
   it("does not let a competitor-named listicle on another site count as the competitor", () => {

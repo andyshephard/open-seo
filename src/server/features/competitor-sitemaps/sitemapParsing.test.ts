@@ -29,6 +29,7 @@ describe("parseSitemapXml", () => {
   it("reads a sitemap index", () => {
     expect(parseSitemapXml(INDEX)).toEqual({
       kind: "index",
+      truncated: false,
       entries: [
         { loc: "https://a.com/sitemap-blog.xml", lastmod: "2026-11-01" },
         { loc: "https://a.com/sitemap-pages.xml.gz", lastmod: null },
@@ -39,6 +40,7 @@ describe("parseSitemapXml", () => {
   it("reads a urlset, decoding entities and CDATA and ignoring image:loc", () => {
     expect(parseSitemapXml(URLSET)).toEqual({
       kind: "urlset",
+      truncated: false,
       entries: [
         {
           loc: "https://a.com/blog/one?a=1&b=2",
@@ -47,6 +49,32 @@ describe("parseSitemapXml", () => {
         { loc: "https://a.com/review/two", lastmod: null },
       ],
     });
+  });
+});
+
+describe("parseSitemapXml limits", () => {
+  it("stops at maxEntries and says so", () => {
+    const xml = `<urlset>${"<url><loc>https://a.com/x</loc></url>".repeat(10)}</urlset>`;
+    const parsed = parseSitemapXml(xml, { maxEntries: 3 });
+    expect(parsed.entries).toHaveLength(3);
+    expect(parsed.truncated).toBe(true);
+  });
+
+  it("stops once the deadline has passed", () => {
+    const xml = `<urlset>${"<url><loc>https://a.com/x</loc></url>".repeat(5000)}</urlset>`;
+    const parsed = parseSitemapXml(xml, { deadline: Date.now() - 1 });
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.entries.length).toBeLessThan(5000);
+  });
+
+  it.each([
+    ["unclosed url tags", "<urlset>" + "<url>".repeat(300_000)],
+    ["unclosed loc tags", "<urlset><url>" + "<loc>".repeat(300_000)],
+    ["lookalike tags", "<urlset>" + "<urlx><urls>".repeat(150_000)],
+  ])("scans %s in linear time", (_name, xml) => {
+    const started = performance.now();
+    expect(parseSitemapXml(xml).entries).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });
 

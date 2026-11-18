@@ -33,10 +33,12 @@ const FETCH_CONCURRENCY = 5;
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 3;
 // Sitemaps are capped at 50 MB uncompressed by the protocol; allow some slack.
-const MAX_COMPRESSED_BYTES = 20_000_000;
-const MAX_TEXT_BYTES = 60_000_000;
-// MCP clients wait about 60 s, so a domain stops collecting a little before.
-const DOMAIN_BUDGET_MS = 40_000;
+const MAX_COMPRESSED_BYTES = 5_000_000;
+const MAX_TEXT_BYTES = 10_000_000;
+// Domains collected at once, on top of FETCH_CONCURRENCY sitemaps within each.
+const DOMAIN_CONCURRENCY = 2;
+// MCP clients wait about 60 s, so the whole call stops collecting before.
+const CALL_BUDGET_MS = 45_000;
 const LISTED_NEW = 200;
 const LISTED_OTHER = 100;
 const USER_AGENT = "OpenSEO-Sitemaps/1.0 (+https://openseo.so)";
@@ -138,10 +140,18 @@ type Collection = {
 
 /** Files a parsed sitemap's entries: child sitemaps to fetch, or page URLs. */
 function absorbSitemap(
-  parsed: ReturnType<typeof parseSitemapXml>,
+  body: string,
   domain: string,
   state: Collection,
+  deadline: number,
 ) {
+  const parsed = parseSitemapXml(body, {
+    // Entries still wanted: the rest of the URL budget (an index lists at most
+    // MAX_SITEMAPS useful children).
+    maxEntries: Math.max(MAX_URLS - state.urls.size, MAX_SITEMAPS),
+    deadline,
+  });
+  if (parsed.truncated) state.truncated = true;
   for (const entry of parsed.entries) {
     if (parsed.kind === "index") {
       if (state.seen.has(entry.loc) || !sameSite(entry.loc, domain)) continue;
@@ -186,7 +196,7 @@ async function collectDomainUrls(domain: string, deadline: number) {
       fetched += batch.length;
       const bodies = await Promise.all(batch.map(fetchSitemapText));
       for (const body of bodies)
-        if (body) absorbSitemap(parseSitemapXml(body), domain, state);
+        if (body) absorbSitemap(body, domain, state, deadline);
     }
     if (depth === MAX_DEPTH && state.next.length > 0) state.truncated = true;
     level = state.next;
@@ -221,7 +231,15 @@ async function snapshotDomain(
   rawDomain: string,
   sinceDays: number,
   billing: BillingCustomerContext,
+  deadline: number,
 ) {
+  if (Date.now() > deadline)
+    return {
+      domain: rawDomain,
+      ok: false as const,
+      error:
+        "Skipped: the call's time budget ran out first. Call again with this domain.",
+    };
   let domain: string;
   try {
     const url = await normalizeAndValidateStartUrl(rawDomain);
@@ -234,7 +252,7 @@ async function snapshotDomain(
     };
   }
   const now = Date.now();
-  const collected = await collectDomainUrls(domain, now + DOMAIN_BUDGET_MS);
+  const collected = await collectDomainUrls(domain, deadline);
   if (collected.urls.length === 0)
     return {
       domain,
@@ -260,16 +278,20 @@ async function snapshotDomain(
     },
   });
 
+  const complete = !collected.truncated && !previous?.truncated;
   const notes: string[] = [];
   if (collected.truncated)
     notes.push(
-      `Collection stopped early (limits: ${MAX_URLS} URLs, ${MAX_SITEMAPS} sitemaps, depth ${MAX_DEPTH}, ${DOMAIN_BUDGET_MS / 1000}s), so URLs past it are missing and removals are not reported.`,
+      `Collection stopped early (limits: ${MAX_URLS} URLs, ${MAX_SITEMAPS} sitemaps, depth ${MAX_DEPTH}, ${CALL_BUDGET_MS / 1000}s per call), so URLs past it are missing and removals are not reported.`,
+    );
+  if (!complete && previous)
+    notes.push(
+      "Either this or the previous snapshot was cut short, so newUrls and refreshedUrls are partial (diffPartial): a URL missing from the earlier snapshot shows as new.",
     );
   if (!snapshotStored)
     notes.push(
       "The snapshot could not be stored, so the next run has no baseline.",
     );
-  const complete = !collected.truncated && !previous?.truncated;
   const diff = previous ? diffSnapshots(previous.urls, collected.urls) : null;
   const recent = recentlyModified(collected.urls, sinceDays, now);
   return {
@@ -280,6 +302,7 @@ async function snapshotDomain(
     urlsWithLastmod: collected.urls.filter(([, lastmod]) => lastmod).length,
     truncated: collected.truncated,
     firstRun: !previous,
+    diffPartial: !!previous && !complete,
     previousSnapshotAt: previous?.fetchedAt ?? null,
     snapshotStored,
     recentlyModified: {
@@ -322,10 +345,19 @@ export async function diffCompetitorSitemaps(
     (await ProjectContextService.getProjectContext(input.projectId)).competitors
       .map((competitor) => competitor.domain)
       .slice(0, MAX_COMPETITOR_DOMAINS);
-  return {
-    domainsRequested: domains.length,
-    results: await Promise.all(
-      domains.map((domain) => snapshotDomain(domain, input.sinceDays, billing)),
-    ),
-  };
+  const deadline = Date.now() + CALL_BUDGET_MS;
+  // A few domains at a time, so memory stays bounded (each holds its sitemaps).
+  const results = [];
+  for (let i = 0; i < domains.length; i += DOMAIN_CONCURRENCY) {
+    results.push(
+      ...(await Promise.all(
+        domains
+          .slice(i, i + DOMAIN_CONCURRENCY)
+          .map((domain) =>
+            snapshotDomain(domain, input.sinceDays, billing, deadline),
+          ),
+      )),
+    );
+  }
+  return { domainsRequested: domains.length, results };
 }

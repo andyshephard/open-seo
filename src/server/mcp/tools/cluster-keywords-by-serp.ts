@@ -26,7 +26,7 @@ import { toolErrorMessage } from "@/server/mcp/tool-error-message";
 import { resolveMarket } from "@/shared/keyword-locations";
 
 const MAX_KEYWORDS = 250;
-const MAX_NEW_SERPS = 25;
+const MAX_NEW_SERPS = 10;
 const SAVED_PAGE_SIZE = 250;
 const SAVED_PAGES = 4;
 const LOOKUP_CONCURRENCY = 8;
@@ -210,7 +210,7 @@ export const clusterKeywordsBySerpTool = {
   config: {
     title: "Cluster keywords by SERP overlap",
     description:
-      "Group keywords whose Google results share the same pages, so each group is served by one page instead of cannibalizing itself. Keywords go in one cluster when their top-10 URLs share 3+ pages, or 2 pages with the same dominant page type (tool, listicle, docs, forum, video, product, blog); each keyword is compared with a cluster's head only, so clusters do not chain. Each cluster lists its head (highest volume), keywords, total volume, dominant page type, shared URLs, which of the project's own pages rank for it, and flags: cannibalization (2+ own pages rank within one cluster) and split (one own page ranks for keywords in 2+ clusters). By default it uses no credits: it reads SERPs OpenSEO already stored for the project in the last maxAgeDays and lists keywords without one under skipped. To buy missing SERPs set useCachedOnly false and maxNewSerps: each costs about 5 credits (a SERP is read 3 times and merged) and counts toward the spend cap. Volumes come from saved keywords. Give keywords or savedKeywordTag. Results behind a google.com/goto redirect are matched by domain and title.",
+      "Group keywords whose Google results share the same pages, so each group is served by one page instead of cannibalizing itself. Keywords go in one cluster when their top-10 URLs share 3+ pages, or 2 pages with the same dominant page type (tool, listicle, docs, forum, video, product, blog); each keyword is compared with a cluster's head only, so clusters do not chain. Each cluster lists its head (highest volume), keywords, total volume, dominant page type, shared URLs, which of the project's own pages rank for it, and flags: cannibalization (2+ own pages rank within one cluster; own pages count anywhere in the stored SERP, not only the top 10) and split (one own page ranks for keywords in 2+ clusters). By default it uses no credits: it reads SERPs OpenSEO already stored for the project in the last maxAgeDays and lists keywords without one under skipped. To buy missing SERPs set useCachedOnly false and maxNewSerps: each costs about 5 credits (a SERP is read 3 times and merged) and counts toward the spend cap; a large buy can outlast the client's wait, and calling again with the same arguments collects what finished at no extra charge. Volumes come from saved keywords. Give keywords or savedKeywordTag. Results behind a google.com/goto redirect are matched by domain and title.",
     inputSchema,
     outputSchema,
     annotations: {

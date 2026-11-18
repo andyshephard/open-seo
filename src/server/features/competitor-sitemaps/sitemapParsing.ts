@@ -11,7 +11,9 @@ type ParsedSitemap = {
 /** [url, lastmod] pairs, the compact form snapshots are stored in. */
 export type SnapshotUrl = [string, string | null];
 
-const BLOCK_PATTERN = /<(url|sitemap)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+// A single entry is a few hundred bytes; anything bigger is junk or an attack.
+const MAX_BLOCK_CHARS = 16_384;
+const DEADLINE_CHECK_EVERY = 1000;
 
 function decodeXml(value: string): string {
   return value
@@ -24,23 +26,74 @@ function decodeXml(value: string): string {
     .trim();
 }
 
-function tag(block: string, name: string): string | null {
-  const match = new RegExp(
-    `<${name}\\b[^>]*>([\\s\\S]*?)</${name}\\s*>`,
-    "i",
-  ).exec(block);
-  return match ? decodeXml(match[1]) || null : null;
+/**
+ * Index of the next `<name` that is a whole tag name (followed by `>`, `/` or
+ * whitespace), or -1. One indexOf per candidate, so it never rescans.
+ */
+function indexOfOpenTag(text: string, name: string, from: number): number {
+  let at = text.indexOf(`<${name}`, from);
+  while (at !== -1) {
+    const next = text.charAt(at + name.length + 1);
+    if (next === ">" || next === "/" || /\s/.test(next)) return at;
+    at = text.indexOf(`<${name}`, at + 1);
+  }
+  return -1;
 }
 
-/** A sitemap index lists more sitemaps; a urlset lists pages. */
-export function parseSitemapXml(xml: string): ParsedSitemap {
-  const kind = /<sitemapindex\b/i.test(xml) ? "index" : "urlset";
+function tag(block: string, name: string): string | null {
+  const open = indexOfOpenTag(block, name, 0);
+  if (open === -1) return null;
+  const start = block.indexOf(">", open);
+  if (start === -1) return null;
+  const end = block.indexOf(`</${name}`, start);
+  if (end === -1) return null;
+  return decodeXml(block.slice(start + 1, end)) || null;
+}
+
+/**
+ * A sitemap index lists more sitemaps; a urlset lists pages. A linear scan:
+ * each entry is found with indexOf from the end of the previous one, and an
+ * entry with no closing tag ends the scan. Stops after `maxEntries` entries (the
+ * result is then `truncated`) or once `deadline` (epoch ms) has passed.
+ */
+export function parseSitemapXml(
+  xml: string,
+  limits: { maxEntries?: number; deadline?: number } = {},
+): ParsedSitemap & { truncated: boolean } {
+  const maxEntries = limits.maxEntries ?? Number.POSITIVE_INFINITY;
+  const kind = xml.includes("<sitemapindex") ? "index" : "urlset";
+  const entryTag = kind === "index" ? "sitemap" : "url";
   const entries: SitemapEntry[] = [];
-  for (const match of xml.matchAll(BLOCK_PATTERN)) {
-    const loc = tag(match[2], "loc");
-    if (loc) entries.push({ loc, lastmod: tag(match[2], "lastmod") });
+  let truncated = false;
+  let position = 0;
+  let scanned = 0;
+  while (true) {
+    const open = indexOfOpenTag(xml, entryTag, position);
+    if (open === -1) break;
+    const bodyStart = xml.indexOf(">", open);
+    if (bodyStart === -1) break;
+    const close = xml.indexOf(`</${entryTag}>`, bodyStart);
+    if (close === -1) break;
+    position = close + entryTag.length + 3;
+    scanned += 1;
+    if (entries.length >= maxEntries) {
+      truncated = true;
+      break;
+    }
+    if (
+      limits.deadline !== undefined &&
+      scanned % DEADLINE_CHECK_EVERY === 0 &&
+      Date.now() > limits.deadline
+    ) {
+      truncated = true;
+      break;
+    }
+    if (close - bodyStart > MAX_BLOCK_CHARS) continue;
+    const block = xml.slice(bodyStart + 1, close);
+    const loc = tag(block, "loc");
+    if (loc) entries.push({ loc, lastmod: tag(block, "lastmod") });
   }
-  return { kind, entries };
+  return { kind, entries, truncated };
 }
 
 /** The `Sitemap:` lines of a robots.txt, in order, without duplicates. */

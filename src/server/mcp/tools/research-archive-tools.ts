@@ -107,6 +107,28 @@ type GetArgs = z.infer<z.ZodObject<typeof getInputSchema>>;
 // The text copy stays small; the full result is in structuredContent.
 const TEXT_PREVIEW_CHARS = 20_000;
 
+const SITEMAP_PREVIEW_URLS = 500;
+
+// A sitemap snapshot can hold 50,000 URLs (several MB). The full payload stays
+// in storage; the tool returns the first URLs, the counts and a note.
+function previewSitemap<T extends { result: unknown }>(entry: T): T {
+  const parsed = z
+    .object({ urls: z.array(z.unknown()) })
+    .passthrough()
+    .safeParse(entry.result);
+  if (!parsed.success || parsed.data.urls.length <= SITEMAP_PREVIEW_URLS)
+    return entry;
+  return {
+    ...entry,
+    result: {
+      ...parsed.data,
+      urls: parsed.data.urls.slice(0, SITEMAP_PREVIEW_URLS),
+      totalUrls: parsed.data.urls.length,
+      note: `Showing the first ${SITEMAP_PREVIEW_URLS} of ${parsed.data.urls.length} URLs. Use diff_competitor_sitemaps for new, removed and refreshed URLs.`,
+    },
+  };
+}
+
 export const getResearchArchiveEntryTool = {
   name: "get_research_archive_entry",
   config: {
@@ -131,7 +153,9 @@ export const getResearchArchiveEntryTool = {
     },
   },
   handler: withMcpProjectAuth(async (args: GetArgs, context) => {
-    const entry = await getArchiveEntry(args.projectId, args.id);
+    const full = await getArchiveEntry(args.projectId, args.id);
+    const entry =
+      full.kind === "sitemap_snapshot" ? previewSitemap(full) : full;
     const json = JSON.stringify(entry.result);
     return mcpResponse({
       text: `${entry.kind} for ${entry.target}, fetched ${entry.fetchedAt} via ${entry.origin}.\n${json.length > TEXT_PREVIEW_CHARS ? `${json.slice(0, TEXT_PREVIEW_CHARS)}… (truncated; full result in structured content)` : json}`,

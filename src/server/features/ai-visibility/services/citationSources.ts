@@ -116,32 +116,65 @@ function cleanHost(domain: string) {
   return domain.toLowerCase().replace(/^www\./, "");
 }
 
-/** The words a context note may use for a competitor: domain, name, label. */
-function competitorNames(competitor: CitationCompetitor): string[] {
-  const label = cleanHost(competitor.domain).split(".")[0];
-  return [cleanHost(competitor.domain), competitor.name, label]
-    .filter((name): name is string => !!name && name.length >= 3)
-    .map((name) => name.toLowerCase());
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
- * A competitor is monitor-only when its own notes, or a sentence of a custom
- * context section that names it, say "monitor only" or "never" (for example a
- * rule "never write NerdSip alternatives content").
+ * The names a context note may use for a competitor, as whole-word patterns:
+ * its domain, its name, and the domain's first label when that is distinctive
+ * (5+ letters, so "app" cannot match "apple" or "app store").
+ */
+function competitorNamePatterns(competitor: CitationCompetitor): string[] {
+  const domain = cleanHost(competitor.domain);
+  const label = domain.split(".")[0];
+  return [domain, competitor.name, label.length >= 5 ? label : null]
+    .filter((name): name is string => !!name && name.trim().length >= 3)
+    .map((name) => escapeRegExp(name.trim().toLowerCase()));
+}
+
+// A dot ends a sentence only before whitespace, so domains stay whole.
+const SENTENCE_BREAK = /[\n!?]+|\.(?=\s|$)/;
+const MONITOR_ONLY = /\bmonitor[\s-]+only\b/i;
+const WORD_START = String.raw`(?<![\p{L}\p{N}])`;
+const WORD_END = String.raw`(?![\p{L}\p{N}])`;
+
+/**
+ * A competitor is monitor-only when its notes, a custom context section's title
+ * or a sentence of a section's text says "monitor only" about it, or says
+ * "never write/publish/create/target/mention ... <competitor>" (for example
+ * `Never write "NerdSip alternatives" content`). A bare "never" elsewhere in the
+ * sentence does not count.
  */
 function competitorMonitorNote(
   competitor: CitationCompetitor,
   customSections: CitationClassifierContext["customSections"],
 ): string | null {
-  const rule = /\bmonitor[\s-]+only\b|\bnever\b/i;
-  if (competitor.notes && rule.test(competitor.notes))
-    return `Competitor notes: ${competitor.notes}`;
-  const names = competitorNames(competitor);
+  const names = competitorNamePatterns(competitor).join("|");
+  if (!names) return null;
+  const named = new RegExp(`${WORD_START}(?:${names})${WORD_END}`, "iu");
+  const forbidden = new RegExp(
+    `\\bnever\\s+(?:write|publish|create|target|mention)\\b[^.\\n]*${WORD_START}(?:${names})${WORD_END}`,
+    "iu",
+  );
+  // Notes are about this competitor, so they need not name it.
+  if (competitor.notes) {
+    for (const sentence of competitor.notes.split(SENTENCE_BREAK)) {
+      if (MONITOR_ONLY.test(sentence) || forbidden.test(sentence))
+        return `Competitor notes: ${sentence.trim()}`;
+    }
+  }
   for (const section of customSections) {
-    for (const sentence of section.content.split(/[\n.!?]+/)) {
-      const lower = sentence.toLowerCase();
-      if (rule.test(sentence) && names.some((name) => lower.includes(name)))
-        return `Context section "${section.title ?? section.slug}": ${sentence.trim()}`;
+    const label = section.title ?? section.slug;
+    const sentences = [
+      section.title ?? "",
+      ...section.content.split(SENTENCE_BREAK),
+    ];
+    for (const sentence of sentences) {
+      const hit =
+        (MONITOR_ONLY.test(sentence) && named.test(sentence)) ||
+        forbidden.test(sentence);
+      if (hit) return `Context section "${label}": ${sentence.trim()}`;
     }
   }
   return null;
